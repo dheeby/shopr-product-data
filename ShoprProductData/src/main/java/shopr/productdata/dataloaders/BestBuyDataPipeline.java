@@ -1,15 +1,24 @@
 package shopr.productdata.dataloaders;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.log4j.Logger;
 import org.joda.time.DateTime;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
+import shopr.productdata.objects.BestBuyProduct;
 import shopr.productdata.utils.Constants;
 import shopr.productdata.utils.PropertiesLoader;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
@@ -85,11 +94,15 @@ public class BestBuyDataPipeline
 
         logger.info("Unzipping BestBuy bulk data file: " + compressedFile);
 
-        File outputDir = new File(destinationDir);
+        File outputDir = new File(destinationDir + File.separator + "unzipped");
         if (!outputDir.exists())
         {
-            logger.info("Creating output directory: " + destinationDir);
-            outputDir.mkdir();
+            logger.info("Creating unzipped output directory: " + destinationDir);
+            if (!outputDir.mkdir())
+            {
+                logger.error("Failed to create unzipped output directory");
+                return null;
+            }
         }
 
         try(ZipInputStream zis = new ZipInputStream(new FileInputStream(compressedFile)))
@@ -100,8 +113,7 @@ public class BestBuyDataPipeline
             while (zipEntry != null)
             {
                 String filename = zipEntry.getName();
-                File currentFile = new File(outputDir + File.separator + filename);
-                new File(currentFile.getParent()).mkdirs();
+                File currentFile = new File(createUnzippedDataFilePath(destinationDir, filename));
                 logger.info("Decompressing file: " + filename);
 
                 FileOutputStream fos = new FileOutputStream(currentFile);
@@ -123,19 +135,110 @@ public class BestBuyDataPipeline
         }
 
         long elapsedTime = System.currentTimeMillis() - startTime;
-        long minutes = elapsedTime / 60000;
-        long seconds = (elapsedTime - (60000 * minutes)) / 1000;
-        long milliseconds = elapsedTime - (60000 * minutes) - (1000 * seconds);
-        logger.info(String.format("Unzipping complete. Elapsed Time: %dmin, %ds, %dms", minutes, seconds, milliseconds));
-        return destinationDir;
+        logger.info(String.format("Unzipping complete. Elapsed Time: %s", formatTime(elapsedTime)));
+
+        try
+        {
+            Files.delete(Paths.get(compressedFile));
+            logger.info("Compressed bulk data file deleted");
+        }
+        catch (IOException e)
+        {
+            logger.warn("Failed to delete compressed data file");
+        }
+        return outputDir.getAbsolutePath();
     }
 
-    public String cleanData(String dataDirectory)
+    @SuppressWarnings("unchecked")
+    public static String cleanData(String dataDirectory)
     {
-        File dataDir = new File(dataDirectory);
+        logger.info("Starting data clean phase for data directory: " + dataDirectory);
 
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNodeFactory nodeFactory = JsonNodeFactory.instance;
+        JSONParser jsonParser = new JSONParser();
+
+        File dataDir = new File(dataDirectory);
+        File[] dataFiles = dataDir.listFiles();
+        if (dataFiles == null)
+        {
+            logger.info("Failed to get data files from data directory: " + dataDirectory);
+            return null;
+        }
+
+        File outputDir = new File(PropertiesLoader.getInstance().getProperty("dir.tmp.destination") + File.separator + "cleaned");
+        if (!outputDir.exists())
+        {
+            logger.info("Creating cleaned output directory: " + outputDir.getAbsolutePath());
+            if (!outputDir.mkdir())
+            {
+                logger.error("Failed to create cleaned output directory");
+                return null;
+            }
+        }
+
+        for (File dataFile : dataFiles)
+        {
+            ArrayNode productDataArrayNode = nodeFactory.arrayNode();
+            String dataFilePath = dataFile.getAbsolutePath();
+            logger.info("Parsing data file: " + dataFilePath);
+            try
+            {
+                JSONArray productDataArray = (JSONArray) jsonParser.parse(new FileReader(dataFile));
+                for (Object productObject : productDataArray)
+                {
+                    JSONObject product = (JSONObject) productObject;
+
+                    BestBuyProduct bestBuyProduct = new BestBuyProduct();
+                    bestBuyProduct.setSku((Long) product.get("sku"));
+                    bestBuyProduct.setProductId((Long) product.get("productId"));
+                    bestBuyProduct.setName((String) product.get("name"));
+                    bestBuyProduct.setType((String) product.get("type"));
+                    bestBuyProduct.setRegularPrice((Double) product.get("regularPrice"));
+                    bestBuyProduct.setSalePrice((Double) product.get("salePrice"));
+                    bestBuyProduct.setOnSale((Boolean) product.get("onSale"));
+                    bestBuyProduct.setImage((String) product.get("image"));
+                    bestBuyProduct.setThumbnailImage((String) product.get("thumbnailImage"));
+                    bestBuyProduct.setShortDescription((String) product.get("shortDescription"));
+                    bestBuyProduct.setLongDescription((String) product.get("longDescription"));
+                    bestBuyProduct.setCustomerReviewCount((Long) product.get("customerReviewCount"));
+                    bestBuyProduct.setCustomerReviewAverage((String) product.get("customerReviewAverage"));
+
+                    productDataArrayNode.addPOJO(bestBuyProduct);
+                }
+            }
+            catch (ParseException e)
+            {
+                logger.error("Parsing data file failed: " + dataFilePath, e);
+            }
+            catch (IOException e)
+            {
+                logger.error("Opening data file failed", e);
+            }
+
+            String outFilePath = createCleanedDataFilePath(dataFile.getName());
+            try (FileWriter outFile = new FileWriter(outFilePath))
+            {
+                logger.info("Writing cleaned data to file");
+                outFile.write(mapper.writerWithDefaultPrettyPrinter().writeValueAsString(productDataArrayNode));
+                outFile.flush();
+                logger.info("Writing cleaned data file complete: " + outFilePath);
+            }
+            catch (IOException e)
+            {
+                logger.error("Opening cleaned data file failed", e);
+            }
+        }
 
         return dataDirectory;
+    }
+
+    private static String formatTime(long timeInMillis)
+    {
+        long minutes = timeInMillis / 60000;
+        long seconds = (timeInMillis - (60000 * minutes)) / 1000;
+        long milliseconds = timeInMillis - (60000 * minutes) - (1000 * seconds);
+        return String.format("%dmin, %ds, %dms", minutes, seconds, milliseconds);
     }
 
     private static String getProductsApiUrlString()
@@ -143,6 +246,16 @@ public class BestBuyDataPipeline
         return Constants.BESTBUY_BULK_PRODUCT_API_BASE + PropertiesLoader.getInstance().getProperty("bestbuy.apikey");
     }
 
+    private static String createUnzippedDataFilePath(String outputBaseDir, String filename)
+    {
+        return String.format("%s%s%s%s%s", outputBaseDir, File.separator, "unzipped", File.separator, filename);
+    }
+
+    private static String createCleanedDataFilePath(String filename)
+    {
+        return String.format("%s%s%s%s%s%s", PropertiesLoader.getInstance().getProperty("dir.tmp.destination"),
+                File.separator, "cleaned", File.separator, "cleaned_", filename);
+    }
 
     private static String createCompressedProductDataFilename()
     {
