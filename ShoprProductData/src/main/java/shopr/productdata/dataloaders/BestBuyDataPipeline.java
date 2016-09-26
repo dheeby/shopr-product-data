@@ -1,8 +1,13 @@
 package shopr.productdata.dataloaders;
 
+import com.amazonaws.AmazonClientException;
+import com.amazonaws.AmazonServiceException;
+import com.amazonaws.auth.profile.ProfileCredentialsProvider;
+import com.amazonaws.services.s3.AmazonS3Client;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import org.apache.commons.io.FileUtils;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
@@ -15,6 +20,7 @@ import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 import shopr.productdata.objects.BestBuyProduct;
 import shopr.productdata.utils.Constants;
+import shopr.productdata.utils.EmailHandler;
 import shopr.productdata.utils.PropertiesLoader;
 
 import java.io.*;
@@ -30,13 +36,76 @@ import java.util.zip.ZipInputStream;
  */
 public class BestBuyDataPipeline
 {
-    private static final Logger logger = Logger.getLogger(BestBuyDataPipeline.class);
+    private static final Logger LOGGER = Logger.getLogger(BestBuyDataPipeline.class);
+    private static final String PIPELINE_NAME = "BESTBUY";
+    private static final String SHOPR_S3_DATA_BUCKET = "shopr-data.com";
 
-    private static long totalBytesRead = 0;
+    private static long totalBytesRead;
+
+    public static boolean executeBestBuyDataPipeline()
+    {
+        LOGGER.info("Executing BestBuy data pipeline...");
+        String dstDir = PropertiesLoader.getInstance().getProperty("dir.tmp.destination");
+        if (Files.notExists(Paths.get(dstDir)))
+        {
+            createTemporaryDirectory(dstDir);
+        }
+
+        // Phase 1
+        String compressedFile = downloadProductData(dstDir);
+        if (compressedFile == null)
+        {
+            EmailHandler.sendFailureEmail(PIPELINE_NAME, 1);
+            // TODO: insert state into state table
+            return false;
+        }
+
+        // Phase 2
+        String unzippedDir = unzipBulkDataFile(compressedFile, dstDir);
+        if (unzippedDir == null)
+        {
+            EmailHandler.sendFailureEmail(PIPELINE_NAME, 2);
+            // TODO: insert state into state table
+            return false;
+        }
+
+        // Phase 3
+        String cleanedDir = cleanData(unzippedDir);
+        if (cleanedDir == null)
+        {
+            EmailHandler.sendFailureEmail(PIPELINE_NAME, 3);
+            // TODO: insert state into state table
+            return false;
+        }
+
+        // Phase 4
+        boolean uploadedToS3 = uploadCleanedProductDataToS3(cleanedDir);
+        if (!uploadedToS3)
+        {
+            EmailHandler.sendFailureEmail(PIPELINE_NAME, 4);
+            // TODO: insert state into state table
+            return false;
+        }
+
+        // Phase 5
+        boolean insertedInDB = insertProductDataToDB(cleanedDir);
+        if (!insertedInDB)
+        {
+            EmailHandler.sendFailureEmail(PIPELINE_NAME, 5);
+            // TODO: insert state into state table
+            return false;
+        }
+
+        deleteTemporaryDirectory(dstDir);
+
+        EmailHandler.sendSuccessEmail(PIPELINE_NAME);
+        LOGGER.info("BestBuy data pipeline complete");
+        return true;
+    }
 
     public static String downloadProductData(String destinationDir)
     {
-        logger.info("Starting BestBuy bulk data download");
+        LOGGER.info("Phase 1: Starting BestBuy bulk data download");
         HttpClient httpClient = HttpClientBuilder.create().build();
         HttpGet request = new HttpGet(getProductsApiUrlString());
         HttpResponse httpResponse;
@@ -46,23 +115,24 @@ public class BestBuyDataPipeline
         }
         catch (IOException e)
         {
-            logger.error("Exception executing BestBuy bulk data load request", e);
+            LOGGER.error("Exception executing BestBuy bulk data load request", e);
             return null;
         }
 
-        logger.info(httpResponse.getStatusLine());
+        LOGGER.info(httpResponse.getStatusLine());
 
-        String bulkDataFilename = Paths.get(destinationDir, createCompressedProductDataFilename()).toString();
+        String bulkDataFilename = createCompressedProductDataFilename();
+        String bulkDataFilePath = Paths.get(destinationDir, bulkDataFilename).toString();
 
         try (
                 InputStream is = httpResponse.getEntity().getContent();
-                FileOutputStream fos = new FileOutputStream(bulkDataFilename)
+                FileOutputStream fos = new FileOutputStream(bulkDataFilePath)
         )
         {
             long contentLength = Long.parseLong(httpResponse.getFirstHeader("Content-length").getValue());
 
-            logger.info("BestBuy bulk data file size: " + (contentLength / 1048576) + "MiB");
-            logger.info("Writing BestBuy bulk data response to file...");
+            LOGGER.info("BestBuy bulk data file size: " + (contentLength / 1048576) + "MiB");
+            LOGGER.info("Writing BestBuy bulk data response to file...");
             byte[] buffer = new byte[8192];
             int bytesRead;
             DownloadProgress downloadProgress = new DownloadProgress(contentLength);
@@ -73,34 +143,36 @@ public class BestBuyDataPipeline
                 fos.write(buffer, 0, bytesRead);
                 totalBytesRead += bytesRead;
             }
+
+            fos.flush();
+            fos.close();
         }
         catch (FileNotFoundException e)
         {
-            logger.error("Exception attempting to create output stream for BestBuy bulk data file");
+            LOGGER.error("Exception attempting to create output stream for BestBuy bulk data file");
             return null;
         }
         catch (IOException e)
         {
-            logger.error("Exception retrieving/writing BestBuy bulk data load response content", e);
+            LOGGER.error("Exception retrieving/writing BestBuy bulk data load response content", e);
             return null;
         }
-        logger.info("Finished BestBuy bulk data download");
-        return bulkDataFilename;
+        LOGGER.info("Finished BestBuy bulk data download");
+        return bulkDataFilePath;
     }
 
     public static String unzipBulkDataFile(String compressedFile, String destinationDir)
     {
+        LOGGER.info("Phase 2: Unzipping BestBuy bulk data file: " + compressedFile);
         long startTime = System.currentTimeMillis();
-
-        logger.info("Unzipping BestBuy bulk data file: " + compressedFile);
 
         File outputDir = new File(destinationDir + File.separator + "unzipped");
         if (!outputDir.exists())
         {
-            logger.info("Creating unzipped output directory: " + destinationDir);
+            LOGGER.info("Creating unzipped output directory: " + destinationDir);
             if (!outputDir.mkdir())
             {
-                logger.error("Failed to create unzipped output directory");
+                LOGGER.error("Failed to create unzipped output directory");
                 return null;
             }
         }
@@ -114,7 +186,7 @@ public class BestBuyDataPipeline
             {
                 String filename = zipEntry.getName();
                 File currentFile = new File(createUnzippedDataFilePath(destinationDir, filename));
-                logger.info("Decompressing file: " + filename);
+                LOGGER.info("Decompressing file: " + filename);
 
                 FileOutputStream fos = new FileOutputStream(currentFile);
                 int bytesRead;
@@ -122,29 +194,30 @@ public class BestBuyDataPipeline
                 {
                     fos.write(buffer, 0, bytesRead);
                 }
+                fos.flush();
                 fos.close();
 
-                logger.info("Decompressing complete");
+                LOGGER.info("Decompressing complete");
                 zipEntry = zis.getNextEntry();
             }
         }
         catch (IOException e)
         {
-            logger.error("Exception unzipping BestBuy bulk data file", e);
+            LOGGER.error("Exception unzipping BestBuy bulk data file", e);
             return null;
         }
 
         long elapsedTime = System.currentTimeMillis() - startTime;
-        logger.info(String.format("Unzipping complete. Elapsed Time: %s", formatTime(elapsedTime)));
+        LOGGER.info(String.format("Unzipping complete. Elapsed Time: %s", formatTime(elapsedTime)));
 
         try
         {
             Files.delete(Paths.get(compressedFile));
-            logger.info("Compressed bulk data file deleted");
+            LOGGER.info("Compressed bulk data file deleted");
         }
         catch (IOException e)
         {
-            logger.warn("Failed to delete compressed data file");
+            LOGGER.warn("Failed to delete compressed data file");
         }
         return outputDir.getAbsolutePath();
     }
@@ -152,7 +225,7 @@ public class BestBuyDataPipeline
     @SuppressWarnings("unchecked")
     public static String cleanData(String dataDirectory)
     {
-        logger.info("Starting data clean phase for data directory: " + dataDirectory);
+        LOGGER.info("Phase 3: Starting data clean phase for data directory: " + dataDirectory);
 
         ObjectMapper mapper = new ObjectMapper();
         JsonNodeFactory nodeFactory = JsonNodeFactory.instance;
@@ -162,17 +235,17 @@ public class BestBuyDataPipeline
         File[] dataFiles = dataDir.listFiles();
         if (dataFiles == null)
         {
-            logger.info("Failed to get data files from data directory: " + dataDirectory);
+            LOGGER.error("Failed to get data files from data directory: " + dataDirectory);
             return null;
         }
 
         File outputDir = new File(PropertiesLoader.getInstance().getProperty("dir.tmp.destination") + File.separator + "cleaned");
         if (!outputDir.exists())
         {
-            logger.info("Creating cleaned output directory: " + outputDir.getAbsolutePath());
+            LOGGER.info("Creating cleaned output directory: " + outputDir.getAbsolutePath());
             if (!outputDir.mkdir())
             {
-                logger.error("Failed to create cleaned output directory");
+                LOGGER.error("Failed to create cleaned output directory");
                 return null;
             }
         }
@@ -181,7 +254,7 @@ public class BestBuyDataPipeline
         {
             ArrayNode productDataArrayNode = nodeFactory.arrayNode();
             String dataFilePath = dataFile.getAbsolutePath();
-            logger.info("Parsing data file: " + dataFilePath);
+            LOGGER.info("Parsing data file: " + dataFilePath);
             try
             {
                 JSONArray productDataArray = (JSONArray) jsonParser.parse(new FileReader(dataFile));
@@ -209,28 +282,116 @@ public class BestBuyDataPipeline
             }
             catch (ParseException e)
             {
-                logger.error("Parsing data file failed: " + dataFilePath, e);
+                LOGGER.error("Parsing data file failed: " + dataFilePath, e);
+                return null;
             }
             catch (IOException e)
             {
-                logger.error("Opening data file failed", e);
+                LOGGER.error("Opening data file failed", e);
+                return null;
             }
 
             String outFilePath = createCleanedDataFilePath(dataFile.getName());
             try (FileWriter outFile = new FileWriter(outFilePath))
             {
-                logger.info("Writing cleaned data to file");
+                LOGGER.info("Writing cleaned data to file");
                 outFile.write(mapper.writerWithDefaultPrettyPrinter().writeValueAsString(productDataArrayNode));
                 outFile.flush();
-                logger.info("Writing cleaned data file complete: " + outFilePath);
+                outFile.close();
+                LOGGER.info("Writing cleaned data file complete: " + outFilePath);
             }
             catch (IOException e)
             {
-                logger.error("Opening cleaned data file failed", e);
+                LOGGER.error("Opening cleaned data file failed", e);
+                return null;
             }
         }
 
-        return dataDirectory;
+        return outputDir.getAbsolutePath();
+    }
+
+    private static boolean uploadCleanedProductDataToS3(String productDataDirectory)
+    {
+        LOGGER.info("Phase 4: Uploading product data to S3");
+
+        File[] productDataFiles = (new File(productDataDirectory)).listFiles();
+        if (productDataFiles == null || productDataFiles.length == 0)
+        {
+            LOGGER.warn("No files available to upload");
+            return false;
+        }
+        for (File productDataFile : productDataFiles)
+        {
+            String dataFilename = productDataFile.getName();
+            LOGGER.info("Uploading file to S3: " + dataFilename);
+            if (!uploadToS3(SHOPR_S3_DATA_BUCKET, createS3ParsedDataDirName(), productDataFile))
+            {
+                LOGGER.warn("Upload failure");
+            }
+            else
+            {
+                LOGGER.info("Upload success");
+            }
+        }
+
+        return true;
+    }
+
+    private static boolean insertProductDataToDB(String productDataDirectory)
+    {
+        LOGGER.info("Phase 5: Inserting product data into database");
+        // TODO: insert product data into DB
+        LOGGER.info("Loading from data directory: " + productDataDirectory);
+        return true;
+    }
+
+    private static boolean createTemporaryDirectory(String dstDir)
+    {
+        try
+        {
+            Files.createDirectory(Paths.get(dstDir));
+        }
+        catch (IOException e)
+        {
+            LOGGER.error("Failed to create temporary directory");
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean deleteTemporaryDirectory(String dstDir)
+    {
+        try
+        {
+            FileUtils.forceDelete(new File(dstDir));
+        }
+        catch (IOException e)
+        {
+            LOGGER.error("Failed to delete temporary directory", e);
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean uploadToS3(String bucket, String key, File file)
+    {
+        AmazonS3Client s3Client = new AmazonS3Client(new ProfileCredentialsProvider());
+        try
+        {
+            LOGGER.info(String.format("bucket[%s], key[%s/%s], file[%s]", bucket, key, file.getName(), file));
+            s3Client.putObject(bucket, key + "/" + file.getName(), file);
+        }
+        catch (AmazonServiceException e)
+        {
+            LOGGER.error("An error occurred making the upload request or handling response", e);
+            return false;
+        }
+        catch (AmazonClientException e)
+        {
+            LOGGER.error("An error occurred processing the upload request", e);
+            return false;
+        }
+        return true;
     }
 
     private static String formatTime(long timeInMillis)
@@ -262,6 +423,11 @@ public class BestBuyDataPipeline
         return String.format("%s_products_BestBuy.json.zip", createDatePrefix());
     }
 
+    private static String createS3ParsedDataDirName()
+    {
+        return String.format("product-data/bestbuy/parsed-data/%s", createDatePrefix());
+    }
+
     private static String createDatePrefix()
     {
         DateTime dt = new DateTime();
@@ -283,13 +449,13 @@ public class BestBuyDataPipeline
             {
                 while (totalBytesRead < totalBytesToDownload)
                 {
-                    logger.info(String.format("Progress: %.2f%%", 100.0 * totalBytesRead / totalBytesToDownload));
+                    LOGGER.info(String.format("Progress: %.2f%%", 100.0 * totalBytesRead / totalBytesToDownload));
                     TimeUnit.SECONDS.sleep(5);
                 }
             }
             catch (InterruptedException e)
             {
-                logger.warn("Exception sleeping in DownloadProgress", e);
+                LOGGER.warn("Exception sleeping in DownloadProgress", e);
             }
         }
     }
