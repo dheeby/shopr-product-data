@@ -101,5 +101,6 @@
     <orderEntry type="library" name="Maven: com.amazonaws:aws-java-sdk-swf-libraries:1.11.22" level="project" />
     <orderEntry type="library" name="Maven: javax.mail:mail:1.4.7" level="project" />
     <orderEntry type="library" name="Maven: javax.activation:activation:1.1" level="project" />
+    <orderEntry type="library" name="Maven: mysql:mysql-connector-java:6.0.4" level="project" />
   </component>
 </module>
