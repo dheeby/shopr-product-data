@@ -15,10 +15,11 @@ public class EmailHandler
 {
     private static final Logger LOGGER = Logger.getLogger(EmailHandler.class);
 
-    public static void sendSuccessEmail(String pipelineName)
+    public static void sendSuccessEmail(String pipelineName, String formattedCompletionTime)
     {
         String subject = "[ShoprProductDataPipeline] Data Pipeline Success";
-        String body = String.format("Data pipeline success.%nPipeline: %s", pipelineName);
+        String body = String.format("Data pipeline success.%nPipeline: %s%nExecution Time: %s",
+                pipelineName, formattedCompletionTime);
         sendEmail(subject, body);
     }
 
