@@ -1,6 +1,10 @@
 package shopr.productdata;
 
 import shopr.productdata.dataloaders.BestBuyDataPipeline;
+import shopr.productdata.dataloaders.WalMartDataPipeline;
+import shopr.productdata.utils.MySQLHandler;
+
+import java.sql.Date;
 
 /**
  * Created by Neil on 9/14/2016.
