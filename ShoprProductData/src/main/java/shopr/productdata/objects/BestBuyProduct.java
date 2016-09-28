@@ -2,8 +2,11 @@ package shopr.productdata.objects;
 
 /**
  * Created by Neil on 9/25/2016.
+ * @author Neil Allison
  */
-public class BestBuyProduct {
+@SuppressWarnings("unused")
+public class BestBuyProduct
+{
     private Long sku;
     private Long productId;
     private String name;
