@@ -1,14 +1,13 @@
 package shopr.productdata.utils;
 
 import org.apache.log4j.Logger;
-import shopr.productdata.dataloaders.BestBuyDataPipeline;
-import shopr.productdata.objects.BestBuyProduct;
 
 import java.sql.*;
 import java.util.Properties;
 
 /**
  * Created by Neil on 9/27/2016.
+ * @author Neil Allison
  */
 public class MySQLHandler
 {
@@ -104,44 +103,6 @@ public class MySQLHandler
         {
             LOGGER.warn("MySQL data load failed for file: " + filename, e);
             status = false;
-        }
-        finally
-        {
-            closeConnection();
-        }
-
-        return status;
-    }
-
-    public int insertBestBuyProduct(BestBuyProduct product)
-    {
-        PreparedStatement productsTableStmt;
-        String sql = "INSERT INTO products VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        int status = 0;
-
-        try
-        {
-            productsTableStmt = establishConnection().prepareStatement(sql);
-            productsTableStmt.setObject(1, product.getUpc());
-            productsTableStmt.setObject(2, product.getProductId());
-            productsTableStmt.setObject(3, product.getName());
-            productsTableStmt.setObject(4, product.getType());
-            productsTableStmt.setObject(5, product.getRegularPrice());
-            productsTableStmt.setObject(6, product.getSalePrice());
-            productsTableStmt.setObject(7, product.getOnSale());
-            productsTableStmt.setObject(8, product.getImage());
-            productsTableStmt.setObject(9, product.getThumbnailImage());
-            productsTableStmt.setObject(10, product.getShortDescription());
-            productsTableStmt.setObject(11, product.getLongDescription());
-            productsTableStmt.setObject(12, product.getCustomerReviewCount());
-            productsTableStmt.setObject(13, product.getCustomerReviewAverage());
-            productsTableStmt.setObject(14, Date.valueOf(Utils.createFormattedDateString()));
-            productsTableStmt.setObject(15, BestBuyDataPipeline.PIPELINE_NAME);
-            status = productsTableStmt.executeUpdate();
-        }
-        catch (SQLException e)
-        {
-            LOGGER.warn("Conflict on product insertion.", e);
         }
         finally
         {
