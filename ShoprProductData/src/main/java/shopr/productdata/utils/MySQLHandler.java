@@ -1,6 +1,7 @@
 package shopr.productdata.utils;
 
 import org.apache.log4j.Logger;
+import shopr.productdata.dataloaders.BestBuyDataPipeline;
 import shopr.productdata.objects.BestBuyProduct;
 
 import java.sql.*;
@@ -12,10 +13,7 @@ import java.util.Properties;
 public class MySQLHandler
 {
     private static final Logger LOGGER = Logger.getLogger(MySQLHandler.class);
-    private static final String JDBC_DRIVER = "com.mysql.jdbc.Driver";
     private static final String CONNECT_URL = "jdbc:mysql://shoprdevdb.c3qsazu8diam.us-east-1.rds.amazonaws.com:3306/shopr";
-    private static final String USERNAME = "shopradmin";
-    private static final String PASSWORD = "shopradmin";
 
     private Connection connection;
     private Properties properties;
@@ -89,19 +87,61 @@ public class MySQLHandler
         return status;
     }
 
+    public boolean loadDataLocalInfileCsv(String filename)
+    {
+        Statement stmt;
+        String sql = String.format(
+                "LOAD DATA LOCAL INFILE '%s' INTO TABLE products FIELDS TERMINATED BY \',\' LINES TERMINATED BY \'\\n\'",
+                filename
+        );
+        boolean status = true;
+        try
+        {
+            stmt = establishConnection().createStatement();
+            stmt.execute(sql);
+        }
+        catch (SQLException e)
+        {
+            LOGGER.warn("MySQL data load failed for file: " + filename, e);
+            status = false;
+        }
+        finally
+        {
+            closeConnection();
+        }
+
+        return status;
+    }
+
     public int insertBestBuyProduct(BestBuyProduct product)
     {
-        PreparedStatement priceTableStmt;
-        String sql = "INSERT INTO table VALUES(?, ?)";
+        PreparedStatement productsTableStmt;
+        String sql = "INSERT INTO products VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         int status = 0;
 
         try
         {
-            priceTableStmt = establishConnection().prepareStatement(sql);
+            productsTableStmt = establishConnection().prepareStatement(sql);
+            productsTableStmt.setObject(1, product.getUpc());
+            productsTableStmt.setObject(2, product.getProductId());
+            productsTableStmt.setObject(3, product.getName());
+            productsTableStmt.setObject(4, product.getType());
+            productsTableStmt.setObject(5, product.getRegularPrice());
+            productsTableStmt.setObject(6, product.getSalePrice());
+            productsTableStmt.setObject(7, product.getOnSale());
+            productsTableStmt.setObject(8, product.getImage());
+            productsTableStmt.setObject(9, product.getThumbnailImage());
+            productsTableStmt.setObject(10, product.getShortDescription());
+            productsTableStmt.setObject(11, product.getLongDescription());
+            productsTableStmt.setObject(12, product.getCustomerReviewCount());
+            productsTableStmt.setObject(13, product.getCustomerReviewAverage());
+            productsTableStmt.setObject(14, Date.valueOf(Utils.createFormattedDateString()));
+            productsTableStmt.setObject(15, BestBuyDataPipeline.PIPELINE_NAME);
+            status = productsTableStmt.executeUpdate();
         }
         catch (SQLException e)
         {
-            e.printStackTrace();
+            LOGGER.warn("Conflict on product insertion.", e);
         }
         finally
         {

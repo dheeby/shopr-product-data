@@ -1,9 +1,10 @@
 package shopr.productdata.dataloaders;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.ObjectWriter;
+import com.fasterxml.jackson.dataformat.csv.CsvMapper;
+import com.fasterxml.jackson.dataformat.csv.CsvSchema;
 import org.apache.http.HttpResponse;
+import org.apache.http.StatusLine;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.HttpClientBuilder;
@@ -13,12 +14,15 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 import shopr.productdata.objects.BestBuyProduct;
+import shopr.productdata.objects.Phase;
 import shopr.productdata.utils.*;
 
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.sql.Date;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -35,11 +39,27 @@ public class BestBuyDataPipeline
     private static long totalBytesRead;
     private static MySQLHandler mySQLHandler;
 
+    public static boolean executeBestBuyDataPipeline(Phase phase)
+    {
+        switch (phase)
+        {
+            case ALL_PHASES:
+            case DATA_RETRIEVAL_PHASE:
+            case DATA_SANITIZATION_PHASE:
+            case DATA_S3_UPLOAD_PHASE:
+            case DATA_DB_INSERTION_PHASE:
+        }
+        return true;
+    }
+
     public static boolean executeBestBuyDataPipeline()
     {
         long startTime = System.currentTimeMillis();
         LOGGER.info("Executing BestBuy data pipeline...");
         String destinationDir = PropertiesLoader.getInstance().getProperty("dir.tmp.dst.bestbuy");
+
+        // Delete directory in case it is still there from previous failed execution
+        LocalFileSystemHandler.deleteDirectory(destinationDir);
         if (Files.notExists(Paths.get(destinationDir)))
         {
             LocalFileSystemHandler.createDirectory(destinationDir);
@@ -111,6 +131,14 @@ public class BestBuyDataPipeline
         catch (IOException e)
         {
             LOGGER.error("Exception executing BestBuy bulk data download request", e);
+            return null;
+        }
+
+        StatusLine statusLine = httpResponse.getStatusLine();
+
+        if (statusLine.getStatusCode() != 200)
+        {
+            LOGGER.error("BestBuy bulk data API request did not succeed: " + statusLine);
             return null;
         }
 
@@ -195,23 +223,29 @@ public class BestBuyDataPipeline
                 File currentFile = new File(createUnzippedDataFilePath(destinationDir, filename));
                 LOGGER.info("Decompressing file: " + filename);
 
-                FileOutputStream fos = new FileOutputStream(currentFile);
-                int bytesRead;
-                while ((bytesRead = zis.read(buffer)) > 0)
+                try(FileOutputStream fos = new FileOutputStream(currentFile))
                 {
-                    fos.write(buffer, 0, bytesRead);
+                    int bytesRead;
+                    while ((bytesRead = zis.read(buffer)) > 0)
+                    {
+                        fos.write(buffer, 0, bytesRead);
+                    }
+                    fos.flush();
+                    fos.close();
                 }
-                fos.flush();
-                fos.close();
-
-                LOGGER.info("Success");
-                zipEntry = zis.getNextEntry();
+                catch (IOException e)
+                {
+                    LOGGER.error("Exception unzipping BestBuy bulk data file.", e);
+                }
+                finally
+                {
+                    zipEntry = zis.getNextEntry();
+                }
             }
         }
         catch (IOException e)
         {
-            LOGGER.error("Exception unzipping BestBuy bulk data file", e);
-            return null;
+            LOGGER.error("Exception unzipping BestBuy bulk data file.", e);
         }
 
         long elapsedTime = System.currentTimeMillis() - startTime;
@@ -234,8 +268,10 @@ public class BestBuyDataPipeline
     {
         LOGGER.info("Phase 3: Starting data clean phase for data directory: " + dataDirectory);
 
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNodeFactory nodeFactory = JsonNodeFactory.instance;
+        CsvMapper csvMapper = new CsvMapper();
+        CsvSchema schema = csvMapper.schemaFor(BestBuyProduct.class);
+        schema = schema.withColumnSeparator(',');
+
         JSONParser jsonParser = new JSONParser();
 
         File dataDir = new File(dataDirectory);
@@ -259,7 +295,7 @@ public class BestBuyDataPipeline
 
         for (File dataFile : dataFiles)
         {
-            ArrayNode productDataArrayNode = nodeFactory.arrayNode();
+            List<BestBuyProduct> productsList = new ArrayList<>();
             String dataFilePath = dataFile.getAbsolutePath();
             LOGGER.info("Parsing data file: " + dataFilePath);
             try
@@ -271,7 +307,7 @@ public class BestBuyDataPipeline
                     JSONObject product = (JSONObject) productObject;
 
                     BestBuyProduct bestBuyProduct = new BestBuyProduct();
-                    bestBuyProduct.setSku((Long) product.get("sku"));
+                    bestBuyProduct.setUpc((String) product.get("upc"));
                     bestBuyProduct.setProductId((Long) product.get("productId"));
                     bestBuyProduct.setName((String) product.get("name"));
                     bestBuyProduct.setType((String) product.get("type"));
@@ -280,12 +316,24 @@ public class BestBuyDataPipeline
                     bestBuyProduct.setOnSale((Boolean) product.get("onSale"));
                     bestBuyProduct.setImage((String) product.get("image"));
                     bestBuyProduct.setThumbnailImage((String) product.get("thumbnailImage"));
-                    bestBuyProduct.setShortDescription((String) product.get("shortDescription"));
-                    bestBuyProduct.setLongDescription((String) product.get("longDescription"));
+                    String shortDescription = (String) product.get("shortDescription");
+                    if (shortDescription != null)
+                    {
+                        shortDescription = shortDescription.replaceAll("\n", " ").replaceAll("\r", " ");
+                    }
+                    bestBuyProduct.setShortDescription(shortDescription);
+                    String longDescription = (String) product.get("longDescription");
+                    if (longDescription != null)
+                    {
+                        longDescription = longDescription.replaceAll("\n", " ").replaceAll("\r", " ");
+                    }
+                    bestBuyProduct.setLongDescription(longDescription);
                     bestBuyProduct.setCustomerReviewCount((Long) product.get("customerReviewCount"));
                     bestBuyProduct.setCustomerReviewAverage((String) product.get("customerReviewAverage"));
+                    bestBuyProduct.setDs(Date.valueOf(Utils.createFormattedDateString()));
+                    bestBuyProduct.setPipelineName(BestBuyDataPipeline.PIPELINE_NAME);
 
-                    productDataArrayNode.addPOJO(bestBuyProduct);
+                    productsList.add(bestBuyProduct);
                 }
                 reader.close();
             }
@@ -300,19 +348,22 @@ public class BestBuyDataPipeline
                 return null;
             }
 
-            String outFilePath = createCleanedDataFilePath(dataFile.getName());
-            try (FileWriter outFile = new FileWriter(outFilePath))
+            String outFilePath = createCleanedDataFilePath(dataFile.getName().replace(".json", ".csv"));
+            File outFile = new File(outFilePath);
+            ObjectWriter objectWriter = csvMapper.writer(schema);
+            try (FileOutputStream fos = new FileOutputStream(outFile);
+                BufferedOutputStream bos = new BufferedOutputStream(fos, 8192);
+                OutputStreamWriter osw = new OutputStreamWriter(bos, "UTF-8"))
             {
-                LOGGER.info("Writing cleaned data to file");
-                outFile.write(mapper.writerWithDefaultPrettyPrinter().writeValueAsString(productDataArrayNode));
-                outFile.flush();
-                outFile.close();
-                LOGGER.info("Success");
+                objectWriter.writeValue(osw, productsList);
+            }
+            catch (FileNotFoundException e)
+            {
+                LOGGER.warn("Could not find file: " + outFilePath, e);
             }
             catch (IOException e)
             {
-                LOGGER.error("Opening cleaned data file failed", e);
-                return null;
+                LOGGER.error("Exception while writing products to file: " + outFilePath, e);
             }
         }
 
@@ -357,32 +408,15 @@ public class BestBuyDataPipeline
             return false;
         }
 
-        JSONParser jsonParser = new JSONParser();
-        ObjectMapper mapper = new ObjectMapper();
+        mySQLHandler = new MySQLHandler();
         for (File productDataFile : productDataFiles)
         {
-            try
-            {
-                JSONArray productDataArray = (JSONArray) jsonParser.parse(new FileReader(productDataFile));
-                for (Object productObject : productDataArray)
-                {
-                    JSONObject productJSONObject = (JSONObject) productObject;
-                    BestBuyProduct product = mapper.readValue(productJSONObject.toString(), BestBuyProduct.class);
-                    int status = mySQLHandler.insertBestBuyProduct(product);
-                    // TODO: complete
-                }
-            }
-            catch (IOException e)
-            {
-                LOGGER.error("Reading file failed: " + productDataFile.getName(), e);
-            }
-            catch (ParseException e)
-            {
-                LOGGER.error("Parsing file failed: " + productDataFile.getName(), e);
-            }
+            String absolutePath = productDataFile.getAbsolutePath();
+            LOGGER.info("Inserting product data file: " + absolutePath);
+            mySQLHandler.loadDataLocalInfileCsv(absolutePath.replaceAll("\\\\", "\\\\\\\\"));
         }
 
-        LOGGER.info("Loading from data directory: " + productDataDirectory);
+        LOGGER.info("All product data files to insert to DB complete.");
         return true;
     }
 
