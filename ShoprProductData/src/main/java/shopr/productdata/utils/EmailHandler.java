@@ -9,6 +9,7 @@ import java.util.Properties;
 
 /**
  * Created by Neil on 9/25/2016.
+ *
  * @author Neil Allison
  */
 public class EmailHandler
@@ -23,10 +24,10 @@ public class EmailHandler
         sendEmail(subject, body);
     }
 
-    public static void sendFailureEmail(String pipelineName, int phase)
+    public static void sendFailureEmail(String pipelineName, String phase)
     {
         String subject = "[ShoprProductDataPipeline] Data Pipeline Failure";
-        String body = String.format("Failure in data pipeline.%nPipeline: %s%nPhase: %d", pipelineName, phase);
+        String body = String.format("Failure in data pipeline.%nPipeline: %s%nPhase: %s", pipelineName, phase);
         sendEmail(subject, body);
     }
 

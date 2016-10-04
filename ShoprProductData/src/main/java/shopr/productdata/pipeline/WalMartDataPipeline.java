@@ -1,7 +1,6 @@
-package shopr.productdata.dataloaders;
+package shopr.productdata.pipeline;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import org.apache.commons.io.FileUtils;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
@@ -11,6 +10,7 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
+import shopr.productdata.objects.Phase;
 import shopr.productdata.objects.WalMartTaxonomyTreeCategory;
 import shopr.productdata.objects.WalMartTaxonomyTree;
 import shopr.productdata.utils.*;
@@ -23,6 +23,7 @@ import java.util.List;
 
 /**
  * Created by Neil on 9/4/2016.
+ *
  * @author Neil Allison
  */
 public class WalMartDataPipeline
@@ -32,35 +33,46 @@ public class WalMartDataPipeline
     private static final Logger LOGGER = Logger.getLogger(WalMartDataPipeline.class);
     private static final String TAXONOMY_TREE_FILENAME = "walmart_taxonomy.json";
 
-    public static boolean executeWalMartDataPipeline()
+    public static boolean executeWalMartDataPipeline(Phase phase)
     {
         long startTime = System.currentTimeMillis();
         LOGGER.info("Executing WalMart data pipeline...");
         String destinationDir = PropertiesLoader.getInstance().getProperty("dir.tmp.dst.walmart");
-        if (Files.notExists(Paths.get(destinationDir)))
-        {
-            LocalFileSystemHandler.createDirectory(destinationDir);
-        }
 
-        // Phase 1
-        String taxonomyTreeFilePath = downloadTaxonomyTree(destinationDir);
-        if (taxonomyTreeFilePath == null)
+        switch (phase)
         {
-            EmailHandler.sendFailureEmail(PIPELINE_NAME, 1);
-            // TODO: insert state into state table
-            return false;
-        }
+            case ALL_PHASES:
+                // Delete directory in case it is still there from previous failed execution
+                if (Files.exists(Paths.get(destinationDir)))
+                {
+                    LocalFileSystemHandler.deleteDirectory(destinationDir);
+                }
+                if (Files.notExists(Paths.get(destinationDir)))
+                {
+                    LocalFileSystemHandler.createDirectory(destinationDir);
+                }
+            case DATA_RETRIEVAL_PHASE:
+                String taxonomyTreeFilePath = downloadTaxonomyTree(destinationDir);
+                if (taxonomyTreeFilePath == null)
+                {
+                    EmailHandler.sendFailureEmail(PIPELINE_NAME, Phase.DATA_RETRIEVAL_PHASE.name());
+                    // TODO: insert state into state table
+                    return false;
+                }
 
-        // Phase 2
-        WalMartTaxonomyTree taxonomyTree = parseTaxonomyTree(taxonomyTreeFilePath);
-        if (taxonomyTree.getCategories() == null)
-        {
-            EmailHandler.sendFailureEmail(PIPELINE_NAME, 2);
-            // TODO: insert state into state table
-            return false;
+                WalMartTaxonomyTree taxonomyTree = parseTaxonomyTree(taxonomyTreeFilePath);
+                if (taxonomyTree.getCategories() == null)
+                {
+                    EmailHandler.sendFailureEmail(PIPELINE_NAME, Phase.DATA_RETRIEVAL_PHASE.name());
+                    // TODO: insert state into state table
+                    return false;
+                }
+            case DATA_PRE_PROCESS_PHASE:
+            case DATA_SANITIZATION_PHASE:
+            case DATA_S3_UPLOAD_PHASE:
+            case DATA_DB_INSERTION_PHASE:
         }
-
-        // TODO: add back in when pipeline phases complete
+        // TODO: add back later
 //        LocalFileSystemHandler.deleteDirectory(destinationDir);
 
         long elapsedTime = System.currentTimeMillis() - startTime;

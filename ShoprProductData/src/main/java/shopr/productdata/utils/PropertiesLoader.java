@@ -1,6 +1,6 @@
 package shopr.productdata.utils;
 
-import shopr.productdata.ShoprProductDataDriver;
+import shopr.productdata.ShoprProductDataPipelineDriver;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -16,7 +16,7 @@ public final class PropertiesLoader
 
     private PropertiesLoader()
     {
-        try (InputStream is = ShoprProductDataDriver.class.getClassLoader().getResourceAsStream(Constants.SHOPR_PROPERTIES_FILE))
+        try (InputStream is = ShoprProductDataPipelineDriver.class.getClassLoader().getResourceAsStream(Constants.SHOPR_PROPERTIES_FILE))
         {
             properties = new Properties();
             if (is != null)

@@ -10,6 +10,8 @@ import java.io.File;
 
 /**
  * Created by Neil on 9/27/2016.
+ *
+ * @author Neil Allison
  */
 public class S3Handler
 {

@@ -2,8 +2,12 @@ package shopr.productdata.utils;
 
 import org.joda.time.DateTime;
 
+import java.sql.Date;
+
 /**
  * Created by Neil on 9/27/2016.
+ *
+ * @author Neil Allison
  */
 public class Utils
 {
@@ -24,5 +28,15 @@ public class Utils
     public static String getBestBuyProductsApiUrlString()
     {
         return Constants.BESTBUY_BULK_PRODUCT_API_BASE + PropertiesLoader.getInstance().getProperty("bestbuy.apikey");
+    }
+
+    public static void insertFailureState(String pipelineName, String phase)
+    {
+        (new MySQLHandler()).insertFailureState(pipelineName, phase, new Date(System.currentTimeMillis()));
+    }
+
+    public static void cleanupFailureStateTable(String pipelineName)
+    {
+        (new MySQLHandler()).deleteFailureStates(pipelineName);
     }
 }

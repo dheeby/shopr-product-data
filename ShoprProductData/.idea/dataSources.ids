@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component name="dataSourceStorage">
+  <data-source name="MySQL - shopr@shoprdevdb.c3qsazu8diam.us-east-1.rds.amazonaws.com" uuid="0792552e-b023-4eab-bc45-b46796241f60">
+    <database-info product="MySQL" version="5.6.27-log" jdbc-version="4.0" driver-name="MySQL Connector Java" driver-version="mysql-connector-java-5.1.35 ( Revision: 5fb9c5849535c13917c2cf9baaece6ef9693ef27 )">
+      <extra-name-characters>#@</extra-name-characters>
+      <identifier-quote-string>`</identifier-quote-string>
+    </database-info>
+    <case-sensitivity plain-identifiers="exact" quoted-identifiers="exact"/>
+    <database-model serializer="dbm" rdbms="MYSQL" format-version="2.4">
+      <schema id="1" name="shopr"/>
+      <table id="2" parent="1" name="data_pipeline_failure_state"/>
+      <table id="3" parent="1" name="products"/>
+      <column id="4" parent="2" name="pipelineName">
+        <mandatory>1</mandatory>
+        <data-type>varchar(128)</data-type>
+        <default-expression>&apos;&apos;</default-expression>
+      </column>
+      <column id="5" parent="2" name="phase">
+        <mandatory>1</mandatory>
+        <data-type>varchar(40)</data-type>
+        <default-expression>&apos;&apos;</default-expression>
+      </column>
+      <column id="6" parent="2" name="ds">
+        <mandatory>1</mandatory>
+        <data-type>date</data-type>
+        <default-expression>&apos;0000-00-00&apos;</default-expression>
+      </column>
+      <key id="7" parent="2" name="PRIMARY">
+        <columns>pipelineName
+phase
+ds</columns>
+        <primary>1</primary>
+      </key>
+      <column id="8" parent="3" name="upc">
+        <data-type>varchar(30)</data-type>
+      </column>
+      <column id="9" parent="3" name="productId">
+        <data-type>bigint(20)</data-type>
+      </column>
+      <column id="10" parent="3" name="name">
+        <data-type>varchar(128)</data-type>
+      </column>
+      <column id="11" parent="3" name="type">
+        <data-type>varchar(40)</data-type>
+      </column>
+      <column id="12" parent="3" name="regularPrice">
+        <data-type>decimal(6,2)</data-type>
+      </column>
+      <column id="13" parent="3" name="salePrice">
+        <data-type>decimal(6,2)</data-type>
+      </column>
+      <column id="14" parent="3" name="onSale">
+        <data-type>tinyint(1)</data-type>
+      </column>
+      <column id="15" parent="3" name="image">
+        <data-type>varchar(128)</data-type>
+      </column>
+      <column id="16" parent="3" name="thumbnailImage">
+        <data-type>varchar(128)</data-type>
+      </column>
+      <column id="17" parent="3" name="shortDescription">
+        <data-type>text</data-type>
+      </column>
+      <column id="18" parent="3" name="longDescription">
+        <data-type>text</data-type>
+      </column>
+      <column id="19" parent="3" name="customerReviewCount">
+        <data-type>int(10) unsigned</data-type>
+      </column>
+      <column id="20" parent="3" name="customerReviewAverage">
+        <data-type>varchar(30)</data-type>
+      </column>
+      <column id="21" parent="3" name="ds">
+        <mandatory>1</mandatory>
+        <data-type>date</data-type>
+        <default-expression>&apos;1900-01-01&apos;</default-expression>
+      </column>
+      <column id="22" parent="3" name="vendor">
+        <mandatory>1</mandatory>
+        <data-type>varchar(30)</data-type>
+      </column>
+      <column id="23" parent="3" name="categoryPath">
+        <data-type>text</data-type>
+      </column>
+    </database-model>
+  </data-source>
+</component>

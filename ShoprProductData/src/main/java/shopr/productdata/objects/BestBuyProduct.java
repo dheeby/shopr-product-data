@@ -11,7 +11,8 @@ import java.sql.Date;
  */
 @SuppressWarnings("unused")
 @JsonPropertyOrder({"upc", "productId", "name", "type", "regularPrice", "salePrice", "onSale", "image", "thumbnailImage",
-"shortDescription", "longDescription", "customerReviewCount", "customerReviewAverage", "ds", "pipelineName"})
+"shortDescription", "longDescription", "customerReviewCount", "customerReviewAverage", "ds", "pipelineName",
+"categoryPath"})
 public class BestBuyProduct
 {
     private String upc;
@@ -29,6 +30,7 @@ public class BestBuyProduct
     private String customerReviewAverage;
     private Date ds;
     private String pipelineName;
+    private String categoryPath;
 
     public BestBuyProduct()
     {
@@ -183,5 +185,15 @@ public class BestBuyProduct
     public void setPipelineName(String pipelineName)
     {
         this.pipelineName = pipelineName;
+    }
+
+    public String getCategoryPath()
+    {
+        return categoryPath;
+    }
+
+    public void setCategoryPath(String categoryPath)
+    {
+        this.categoryPath = categoryPath;
     }
 }

@@ -3,10 +3,12 @@ package shopr.productdata.utils;
 import org.apache.log4j.Logger;
 
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.Properties;
 
 /**
  * Created by Neil on 9/27/2016.
+ *
  * @author Neil Allison
  */
 public class MySQLHandler
@@ -60,17 +62,17 @@ public class MySQLHandler
         }
     }
 
-    public int insertFailureState(String pipelineName, int phase, Date ds)
+    public int insertFailureState(String pipelineName, String phase, Date ds)
     {
         PreparedStatement preparedStatement;
-        String sql = "INSERT INTO data_pipeline_failure_state VALUES(?, ?, ?)";
+        String sql = "INSERT INTO data_pipeline_failure_state (pipelineName, phase, ds) VALUES(?, ?, ?)";
         int status = 0;
 
         try
         {
             preparedStatement = establishConnection().prepareStatement(sql);
             preparedStatement.setString(1, pipelineName);
-            preparedStatement.setInt(2, phase);
+            preparedStatement.setString(2, phase);
             preparedStatement.setDate(3, ds);
             status = preparedStatement.executeUpdate();
         }
@@ -110,5 +112,54 @@ public class MySQLHandler
         }
 
         return status;
+    }
+
+    public void deleteFailureStates(String pipelineName)
+    {
+        PreparedStatement stmt;
+        String sql = "DELETE FROM data_pipeline_failure_state WHERE pipelineName=?";
+        try
+        {
+            stmt = establishConnection().prepareStatement(sql);
+            stmt.setString(1, pipelineName);
+
+            stmt.executeUpdate();
+        }
+        catch (SQLException e)
+        {
+            e.printStackTrace();
+        }
+    }
+
+    public ArrayList<String[]> getPipelineFailureStates()
+    {
+        ArrayList<String[]> failureStates = new ArrayList<>();
+        Statement stmt;
+        String sql = "SELECT * FROM data_pipeline_failure_state";
+
+        try
+        {
+            stmt = establishConnection().createStatement();
+            stmt.executeQuery(sql);
+            ResultSet rs = stmt.getResultSet();
+            while (rs.next())
+            {
+                String[] failureState = new String[3];
+                failureState[0] = rs.getString(1);
+                failureState[1] = rs.getString(2);
+                failureState[2] = rs.getDate(3).toString();
+                failureStates.add(failureState);
+            }
+        }
+        catch (SQLException e)
+        {
+            e.printStackTrace();
+        }
+        finally
+        {
+            closeConnection();
+        }
+
+        return failureStates;
     }
 }
