@@ -10,9 +10,9 @@ import java.sql.Date;
  * @author Neil Allison
  */
 @SuppressWarnings("unused")
-@JsonPropertyOrder({"upc", "productId", "name", "type", "regularPrice", "salePrice", "onSale", "image", "thumbnailImage",
-"shortDescription", "longDescription", "customerReviewCount", "customerReviewAverage", "ds", "pipelineName",
-"categoryPath"})
+@JsonPropertyOrder({"ds", "upc", "productId", "name", "type", "regularPrice", "salePrice", "onSale", "image",
+        "thumbnailImage", "shortDescription", "longDescription", "customerReviewCount", "customerReviewAverage",
+        "pipelineName", "categoryPath"})
 public class BestBuyProduct
 {
     private String upc;
