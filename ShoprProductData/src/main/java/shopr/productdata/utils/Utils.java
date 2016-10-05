@@ -1,6 +1,7 @@
 package shopr.productdata.utils;
 
 import org.joda.time.DateTime;
+import shopr.productdata.objects.PipelineName;
 
 import java.sql.Date;
 
@@ -30,13 +31,13 @@ public class Utils
         return Constants.BESTBUY_BULK_PRODUCT_API_BASE + PropertiesLoader.getInstance().getProperty("bestbuy.apikey");
     }
 
-    public static void insertFailureState(String pipelineName, String phase)
+    public static void insertFailureState(PipelineName pipelineName, String phase)
     {
-        (new MySQLHandler()).insertFailureState(pipelineName, phase, new Date(System.currentTimeMillis()));
+        (new MySQLHandler()).insertFailureState(pipelineName.name(), phase, new Date(System.currentTimeMillis()));
     }
 
-    public static void cleanupFailureStateTable(String pipelineName)
+    public static void cleanupFailureStateTable(PipelineName pipelineName)
     {
-        (new MySQLHandler()).deleteFailureStates(pipelineName);
+        (new MySQLHandler()).deleteFailureStates(pipelineName.name());
     }
 }

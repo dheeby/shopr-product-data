@@ -7,11 +7,11 @@ package shopr.productdata.objects;
  */
 public enum Phase
 {
-    ALL_PHASES,
-    DATA_RETRIEVAL_PHASE,
-    DATA_PRE_PROCESS_PHASE,
-    DATA_SANITIZATION_PHASE,
-    DATA_S3_UPLOAD_PHASE,
-    DATA_DB_INSERTION_PHASE,
+    ALL,
+    DATARETRIEVAL,
+    PREPROCESS,
+    SANITIZATION,
+    S3UPLOAD,
+    DBINSERTION,
     NONE
 }

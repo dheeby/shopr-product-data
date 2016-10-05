@@ -1,6 +1,7 @@
 package shopr.productdata.utils;
 
 import org.apache.log4j.Logger;
+import shopr.productdata.objects.PipelineName;
 
 import javax.mail.*;
 import javax.mail.internet.InternetAddress;
@@ -16,18 +17,18 @@ public class EmailHandler
 {
     private static final Logger LOGGER = Logger.getLogger(EmailHandler.class);
 
-    public static void sendSuccessEmail(String pipelineName, String formattedCompletionTime)
+    public static void sendSuccessEmail(PipelineName pipelineName, String formattedCompletionTime)
     {
         String subject = "[ShoprProductDataPipeline] Data Pipeline Success";
         String body = String.format("Data pipeline success.%nPipeline: %s%nExecution Time: %s",
-                pipelineName, formattedCompletionTime);
+                pipelineName.name(), formattedCompletionTime);
         sendEmail(subject, body);
     }
 
-    public static void sendFailureEmail(String pipelineName, String phase)
+    public static void sendFailureEmail(PipelineName pipelineName, String phase)
     {
         String subject = "[ShoprProductDataPipeline] Data Pipeline Failure";
-        String body = String.format("Failure in data pipeline.%nPipeline: %s%nPhase: %s", pipelineName, phase);
+        String body = String.format("Failure in data pipeline.%nPipeline: %s%nPhase: %s", pipelineName.name(), phase);
         sendEmail(subject, body);
     }
 

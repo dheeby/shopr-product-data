@@ -2,6 +2,7 @@ package shopr.productdata.pipeline;
 
 import org.apache.log4j.Logger;
 import shopr.productdata.objects.Phase;
+import shopr.productdata.objects.PipelineName;
 
 import java.util.ArrayList;
 
@@ -21,14 +22,14 @@ public class ShoprProductDataPipeline
             Phase phase = Phase.valueOf(state[1]);
             switch(state[0])
             {
-                case BestBuyDataPipeline.PIPELINE_NAME:
-                    if (!phase.name().equals(Phase.NONE.name()) && !BestBuyDataPipeline.executeBestBuyDataPipeline(phase))
+                case "BESTBUY":
+                    if (!phase.name().equals(Phase.NONE.name()) && !(new BestBuyDataPipeline(PipelineName.BESTBUY)).executeDataPipeline(phase))
                     {
                         LOGGER.error("BestBuyDataPipeline failed. Check failure email and logs.");
                     }
                     break;
-                case WalMartDataPipeline.PIPELINE_NAME:
-                    if (!phase.name().equals(Phase.NONE.name()) && !WalMartDataPipeline.executeWalMartDataPipeline(phase))
+                case "WALMART":
+                    if (!phase.name().equals(Phase.NONE.name()) && !(new WalMartDataPipeline(PipelineName.WALMART)).executeDataPipeline(phase))
                     {
                         LOGGER.error("WalMartDataPipeline failed. Check failure email and logs.");
                     }
