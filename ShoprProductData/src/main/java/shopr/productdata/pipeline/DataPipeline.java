@@ -23,7 +23,7 @@ public abstract class DataPipeline
     public Logger LOGGER;
 
     public final String baseDir;
-    public final String unzippedDir;
+    public final String uncleanedDir;
     public final String cleanedDir;
 
     public DataPipeline(PipelineName pipelineName)
@@ -31,14 +31,14 @@ public abstract class DataPipeline
         this.pipelineName = pipelineName;
         LOGGER = Logger.getLogger(this.getClass());
         baseDir = PropertiesLoader.getInstance().getProperty("dir.tmp.dst." + pipelineName.name());
-        unzippedDir = baseDir + File.separator + "unzipped";
+        uncleanedDir = baseDir + File.separator + "uncleaned";
         cleanedDir = baseDir + File.separator + "cleaned";
     }
 
     public boolean executeDataPipeline(Phase phase)
     {
         long startTime = System.currentTimeMillis();
-        LOGGER.info("Executing BestBuy data pipeline...");
+        LOGGER.info(String.format("Executing %s data pipeline...", pipelineName.name()));
 
         switch (phase)
         {
@@ -51,6 +51,14 @@ public abstract class DataPipeline
                 if (Files.notExists(Paths.get(baseDir)))
                 {
                     LocalFileSystemHandler.createDirectory(baseDir);
+                }
+                if (Files.notExists(Paths.get(uncleanedDir)))
+                {
+                    LocalFileSystemHandler.createDirectory(uncleanedDir);
+                }
+                if (Files.notExists(Paths.get(cleanedDir)))
+                {
+                    LocalFileSystemHandler.createDirectory(cleanedDir);
                 }
             case DATARETRIEVAL:
                 if (!executeDataRetrievalPhase(baseDir))
@@ -67,7 +75,7 @@ public abstract class DataPipeline
                     return false;
                 }
             case SANITIZATION:
-                if (!executeSanitizationPhase(unzippedDir))
+                if (!executeSanitizationPhase(uncleanedDir))
                 {
                     EmailHandler.sendFailureEmail(pipelineName, Phase.SANITIZATION.name());
                     Utils.insertFailureState(pipelineName, Phase.SANITIZATION.name());
@@ -97,7 +105,7 @@ public abstract class DataPipeline
 
         long elapsedTime = System.currentTimeMillis() - startTime;
         EmailHandler.sendSuccessEmail(pipelineName, Utils.formatTime(elapsedTime));
-        LOGGER.info("BestBuy data pipeline complete");
+        LOGGER.info(String.format("%s data pipeline complete", pipelineName.name()));
         return true;
     }
 

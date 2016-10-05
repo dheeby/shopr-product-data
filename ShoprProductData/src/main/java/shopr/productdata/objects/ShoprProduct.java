@@ -13,7 +13,7 @@ import java.sql.Date;
 @JsonPropertyOrder({"ds", "upc", "productId", "name", "type", "regularPrice", "salePrice", "onSale", "image",
         "thumbnailImage", "shortDescription", "longDescription", "customerReviewCount", "customerReviewAverage",
         "pipelineName", "categoryPath"})
-public class BestBuyProduct
+public class ShoprProduct
 {
     private String upc;
     private Long productId;
@@ -32,7 +32,7 @@ public class BestBuyProduct
     private String pipelineName;
     private String categoryPath;
 
-    public BestBuyProduct()
+    public ShoprProduct()
     {
         // Explicit default needed for Jackson
     }

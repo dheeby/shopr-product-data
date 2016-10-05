@@ -1,7 +1,9 @@
 package shopr.productdata.pipeline;
 
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import org.apache.http.HttpResponse;
+import com.fasterxml.jackson.databind.ObjectWriter;
+import com.fasterxml.jackson.dataformat.csv.CsvMapper;
+import com.fasterxml.jackson.dataformat.csv.CsvSchema;
+import org.apache.http.*;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.HttpClientBuilder;
@@ -10,14 +12,15 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
-import shopr.productdata.objects.Phase;
+import shopr.productdata.objects.ShoprProduct;
+import shopr.productdata.objects.PipelineName;
 import shopr.productdata.objects.WalMartTaxonomyTreeCategory;
 import shopr.productdata.objects.WalMartTaxonomyTree;
 import shopr.productdata.utils.*;
 
 import java.io.*;
-import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.sql.Date;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,64 +29,331 @@ import java.util.List;
  *
  * @author Neil Allison
  */
-public class WalMartDataPipeline
+public class WalMartDataPipeline extends DataPipeline
 {
-    public static final String PIPELINE_NAME = "WALMART";
-
-    private static final Logger LOGGER = Logger.getLogger(WalMartDataPipeline.class);
     private static final String TAXONOMY_TREE_FILENAME = "walmart_taxonomy.json";
 
-    public static boolean executeWalMartDataPipeline(Phase phase)
+    private String[] categories = {
+            "3944_1229722_1229728", // iPad
+            "3944_1229722_1229734", // iPhone
+            "3944_1229722_1696849", // Apple Watch
+            "3944_1229722_1230411", // Beats by Dre
+            "3944_1156273_1156275", // iPad Air
+            "3944_542371_1127173",  // iPhone
+            "3944_542371_1076544",  // Family mobile
+            "3944_542371_1073085",  // Unlocked Phones
+            "3944_3951_132960",     // All laptop computers
+            "3944_3951_132982",     // Desktop computers
+            "3944_3951_1089430",    // laptops
+            "3944_1060825_1180168", // 4k Ultra HD tv
+            "3944_1060825_447913",  // All TVs
+            "3944_1229723_5635313", // Fitbit
+            "3944_133277_1096663",  // DSLR cameras
+            "3944_133277_1095238",  // GoPro and accessories
+            "3944_133277_1230677",  // Mirrorless cameras
+            "3944_3951_1230331",    // Computer monitors
+            "3944_1228606",         // Drones
+            "3944_1095191_4480"     // Headphones
+    };
+
+    public WalMartDataPipeline(PipelineName pipelineName)
     {
-        long startTime = System.currentTimeMillis();
-        LOGGER.info("Executing WalMart data pipeline...");
-        String destinationDir = PropertiesLoader.getInstance().getProperty("dir.tmp.dst.walmart");
+        super(pipelineName);
+        this.LOGGER = Logger.getLogger(this.getClass());
+    }
 
-        switch (phase)
+    public boolean executeDataRetrievalPhase(String destinationDir)
+    {
+        LOGGER.info("Phase 1: Starting data retrieval");
+        HttpClient httpClient = HttpClientBuilder.create().build();
+        String apiSuffix = String.format("/v1/paginated/items?apiKey=%s&format=json&category=",
+                PropertiesLoader.getInstance().getProperty("walmart.apikey"));
+        int numPages = 2;
+
+        for (String category : categories)
         {
-            case ALL_PHASES:
-                // Delete directory in case it is still there from previous failed execution
-                if (Files.exists(Paths.get(destinationDir)))
+            int pageNumber = 0;
+            String requestUrl = Constants.WALMART_API_BASE + apiSuffix + category;
+            String nextPageSuffix = "";
+            for (int i = 0; i < numPages; i++)
+            {
+                if (nextPageSuffix == null)
                 {
-                    LocalFileSystemHandler.deleteDirectory(destinationDir);
+                    break;
                 }
-                if (Files.notExists(Paths.get(destinationDir)))
+                HttpGet request = new HttpGet(requestUrl);
+                HttpResponse httpResponse;
+                try
                 {
-                    LocalFileSystemHandler.createDirectory(destinationDir);
+                    httpResponse = httpClient.execute(request);
                 }
-            case DATA_RETRIEVAL_PHASE:
-                String taxonomyTreeFilePath = downloadTaxonomyTree(destinationDir);
-                if (taxonomyTreeFilePath == null)
+                catch (IOException e)
                 {
-                    EmailHandler.sendFailureEmail(PIPELINE_NAME, Phase.DATA_RETRIEVAL_PHASE.name());
-                    // TODO: insert state into state table
+                    LOGGER.error("Exception executing WalMart paginated products download request", e);
                     return false;
                 }
 
-                WalMartTaxonomyTree taxonomyTree = parseTaxonomyTree(taxonomyTreeFilePath);
-                if (taxonomyTree.getCategories() == null)
+                StatusLine statusLine = httpResponse.getStatusLine();
+
+                if (statusLine.getStatusCode() != 200)
                 {
-                    EmailHandler.sendFailureEmail(PIPELINE_NAME, Phase.DATA_RETRIEVAL_PHASE.name());
-                    // TODO: insert state into state table
+                    LOGGER.error("WalMart Paginated Products API request did not succeed: " + statusLine);
                     return false;
                 }
-            case DATA_PRE_PROCESS_PHASE:
-            case DATA_SANITIZATION_PHASE:
-            case DATA_S3_UPLOAD_PHASE:
-            case DATA_DB_INSERTION_PHASE:
+
+                String dataFilename = category + "_page_" + (pageNumber++) + ".json";
+                String dataFilePath = Paths.get(uncleanedDir, dataFilename).toString();
+                try (
+                        InputStream is = httpResponse.getEntity().getContent();
+                        FileOutputStream fos = new FileOutputStream(dataFilePath)
+                )
+                {
+                    LOGGER.info("Downloading data to file: " + dataFilePath);
+                    byte[] buffer = new byte[8192];
+                    int bytesRead;
+                    while((bytesRead = is.read(buffer)) > 0)
+                    {
+                        fos.write(buffer, 0, bytesRead);
+                    }
+                    fos.flush();
+                    fos.close();
+                }
+                catch (IOException e)
+                {
+                    LOGGER.error("Exception retrieving/writing WalMart paginated products response content", e);
+                    return false;
+                }
+
+                try
+                {
+                    JSONParser jsonParser = new JSONParser();
+                    FileReader reader = new FileReader(new File(dataFilePath));
+                    JSONObject productsDataObject = (JSONObject) jsonParser.parse(reader);
+                    nextPageSuffix = (String) productsDataObject.get("nextPage");
+                    requestUrl = Constants.WALMART_API_BASE + nextPageSuffix;
+                }
+                catch (FileNotFoundException e)
+                {
+                    LOGGER.warn("Could not find data file: " + dataFilePath);
+                }
+                catch (ParseException e)
+                {
+                    LOGGER.warn("Parsing JSON failed while retrieving next results page.", e);
+                }
+                catch (IOException e)
+                {
+                    LOGGER.warn("Reading data file failed: " + dataFilePath);
+                }
+            }
         }
-        // TODO: add back later
-//        LocalFileSystemHandler.deleteDirectory(destinationDir);
 
-        long elapsedTime = System.currentTimeMillis() - startTime;
-        EmailHandler.sendSuccessEmail(PIPELINE_NAME, Utils.formatTime(elapsedTime));
-        LOGGER.info("WalMart data pipeline complete");
+        LOGGER.info("Uploading uncleaned data to S3");
+
+        String zipFileName = Utils.createFormattedDateString() + "_uncleaned-data.zip";
+        String zipFilePath = baseDir + File.separator + zipFileName;
+
+        try
+        {
+            LocalFileSystemHandler.zipFiles(zipFilePath, destinationDir);
+        }
+        catch (IOException e)
+        {
+            LOGGER.warn("Compressing uncleaned data files to zip directory failed: " + zipFilePath + ", " + destinationDir);
+        }
+
+        if (Constants.ENABLE_WALMART_UNCLEANED_S3_UPLOAD && !S3Handler.uploadToS3(Constants.SHOPR_S3_DATA_BUCKET,
+                "product-data/walmart/uncleaned-data/" + zipFileName, new File(zipFilePath)))
+        {
+            LOGGER.warn("S3 uncleaned data upload failure");
+        }
+
         return true;
     }
 
-    public static String downloadTaxonomyTree(String destinationDir)
+    protected boolean executePreProcessPhase(String dataDirectory)
     {
-        LOGGER.info("Phase 1: Starting WalMart taxonomy tree download");
+        LOGGER.info(String.format("PREPROCESS phase is not used with the %s data pipeline.", pipelineName.name()));
+        return true;
+    }
+
+    protected boolean executeSanitizationPhase(String dataDirectory)
+    {
+        LOGGER.info("Phase 3: Starting data sanitization");
+
+        CsvMapper csvMapper = new CsvMapper();
+        CsvSchema schema = csvMapper.schemaFor(ShoprProduct.class);
+        schema = schema.withColumnSeparator(',');
+
+        JSONParser jsonParser = new JSONParser();
+
+        File dataDir = new File(dataDirectory);
+        File[] dataFiles = dataDir.listFiles();
+        if (dataFiles == null)
+        {
+            LOGGER.error("Failed to get data files from data directory: " + dataDirectory);
+            return false;
+        }
+
+        File outputDir = new File(cleanedDir);
+        if (!outputDir.exists())
+        {
+            LOGGER.info("Creating WalMart cleaned output directory: " + outputDir.getAbsolutePath());
+            if (!outputDir.mkdir())
+            {
+                LOGGER.error("Failed to create WalMart cleaned output directory");
+                return false;
+            }
+        }
+
+        for (File dataFile : dataFiles)
+        {
+            List<ShoprProduct> productList = new ArrayList<>();
+            String dataFilePath = dataFile.getAbsolutePath();
+            LOGGER.info("Parsing data file: " + dataFilePath);
+            try
+            {
+                FileReader reader = new FileReader(dataFile);
+                JSONObject productDataFileObject = (JSONObject) jsonParser.parse(reader);
+                if (productDataFileObject.size() == 0)
+                {
+                    LOGGER.warn("The data file contained no items: " + dataFilePath);
+                    reader.close();
+                    continue;
+                }
+                JSONArray productDataArray = (JSONArray) productDataFileObject.get("items");
+                Date ds = Date.valueOf(Utils.createFormattedDateString());
+                for (Object productObject : productDataArray)
+                {
+                    JSONObject product = (JSONObject) productObject;
+
+                    ShoprProduct shoprProduct = new ShoprProduct();
+                    shoprProduct.setDs(ds);
+                    shoprProduct.setUpc((String) product.get("upc"));
+                    shoprProduct.setProductId((Long) product.get("itemId"));
+                    String name = (String) product.get("name");
+                    if (name != null)
+                    {
+                        name = name.replaceAll("\\r?\\n", " ");
+                    }
+                    shoprProduct.setName(name);
+                    shoprProduct.setType(null);
+                    shoprProduct.setRegularPrice((Double) product.get("msrp"));
+                    shoprProduct.setSalePrice((Double) product.get("salePrice"));
+                    shoprProduct.setOnSale(true);
+                    shoprProduct.setImage((String) product.get("largeImage"));
+                    shoprProduct.setThumbnailImage((String) product.get("thumbnailImage"));
+                    String shortDescription = (String) product.get("shortDescription");
+                    if (shortDescription != null)
+                    {
+                        shortDescription = shortDescription.replaceAll("\\r?\\n", " ");
+                    }
+                    shoprProduct.setShortDescription(shortDescription);
+                    String longDescription = (String) product.get("longDescription");
+                    if (longDescription != null)
+                    {
+                        longDescription = longDescription.replaceAll("\\r?\\n", " ");
+                    }
+                    shoprProduct.setLongDescription(longDescription);
+                    shoprProduct.setCustomerReviewCount(0L);
+                    shoprProduct.setCustomerReviewAverage(null);
+                    shoprProduct.setPipelineName(pipelineName.name());
+                    shoprProduct.setCategoryPath((String) product.get("categoryPath"));
+
+                    productList.add(shoprProduct);
+                }
+                reader.close();
+            }
+            catch (ParseException e)
+            {
+                LOGGER.error("Parsing data file failed: " + dataFilePath, e);
+            }
+            catch (IOException e)
+            {
+                LOGGER.error("Opening data file failed: " + dataFilePath, e);
+                return false;
+            }
+
+            String outFilePath = cleanedDir + File.separator + "cleaned_" + dataFile.getName().replace(".json", ".csv");
+            File outFile = new File(outFilePath);
+            ObjectWriter objectWriter = csvMapper.writer(schema);
+            try (
+                    FileOutputStream fos = new FileOutputStream(outFile);
+                    BufferedOutputStream bos = new BufferedOutputStream(fos, 8192);
+                    OutputStreamWriter osw = new OutputStreamWriter(bos, "UTF-8")
+            )
+            {
+                objectWriter.writeValue(osw, productList);
+            }
+            catch (FileNotFoundException e)
+            {
+                LOGGER.warn("Could not find file: " + outFilePath, e);
+            }
+            catch (IOException e)
+            {
+                LOGGER.error("Exception while writing products to file: " + outFilePath, e);
+            }
+        }
+
+        return true;
+    }
+
+    protected boolean executeS3UploadPhase(String dataDirectory)
+    {
+        LOGGER.info("Phase 4: Starting S3 upload");
+
+        String zipFileName = Utils.createFormattedDateString() + "_parsed-data.zip";
+        String zipFilePath = baseDir + File.separator + zipFileName;
+
+        try
+        {
+            if (!LocalFileSystemHandler.zipFiles(zipFilePath, dataDirectory))
+            {
+                LOGGER.error("Compressing data files to zip directory failed.");
+                return false;
+            }
+        }
+        catch (IOException e)
+        {
+            LOGGER.error("Error occurred writing or reading file", e);
+        }
+
+        if (!S3Handler.uploadToS3(Constants.SHOPR_S3_DATA_BUCKET, "product-data/walmart/parsed-data/" +
+                Utils.createFormattedDateString() + "/" + zipFileName, new File(zipFilePath)))
+        {
+            LOGGER.error("S3 parsed data upload failure");
+            return false;
+        }
+
+        return true;
+    }
+
+    protected boolean executeDbInsertionPhase(String dataDirectory)
+    {
+        LOGGER.info("Phase 5: Starting DB insertion");
+
+        File[] productDataFiles = (new File(dataDirectory)).listFiles();
+        if (productDataFiles == null || productDataFiles.length == 0)
+        {
+            LOGGER.error("No files available to insert");
+            return false;
+        }
+
+        MySQLHandler mySQLHandler = new MySQLHandler();
+        for (File productDataFile : productDataFiles)
+        {
+            String absolutePath = productDataFile.getAbsolutePath();
+            LOGGER.info("Inserting product data file: " + absolutePath);
+            mySQLHandler.loadDataLocalInfileCsv(absolutePath.replaceAll("\\\\", "\\\\\\\\"));
+        }
+
+        LOGGER.info("All product data files to insert to DB complete.");
+        return true;
+    }
+
+    @SuppressWarnings("unused")
+    protected WalMartTaxonomyTree downloadTaxonomyTree(String destinationDir)
+    {
+        LOGGER.info("Starting WalMart taxonomy tree download");
         HttpClient httpClient = HttpClientBuilder.create().build();
         HttpGet request = new HttpGet(getTaxonomyApiUrlString());
         HttpResponse httpResponse;
@@ -130,13 +400,12 @@ public class WalMartDataPipeline
             return null;
         }
         LOGGER.info("Finished WalMart taxonomy tree download");
-        return taxonomyTreeFilePath;
+        return parseTaxonomyTree(taxonomyTreeFilePath);
     }
 
-    public static WalMartTaxonomyTree parseTaxonomyTree(String taxonomyTreeFilePath)
+    protected WalMartTaxonomyTree parseTaxonomyTree(String taxonomyTreeFilePath)
     {
         WalMartTaxonomyTree taxonomyTree = new WalMartTaxonomyTree();
-        JsonNodeFactory nodeFactory = JsonNodeFactory.instance;
         JSONParser jsonParser = new JSONParser();
 
         try
@@ -147,11 +416,7 @@ public class WalMartDataPipeline
             List<WalMartTaxonomyTreeCategory> categoriesList = traverseTree(categories);
             taxonomyTree.setCategories(categoriesList);
         }
-        catch (IOException e)
-        {
-            e.printStackTrace();
-        }
-        catch (ParseException e)
+        catch (IOException | ParseException e)
         {
             e.printStackTrace();
         }
@@ -161,7 +426,7 @@ public class WalMartDataPipeline
         return taxonomyTree;
     }
 
-    private static List<WalMartTaxonomyTreeCategory> traverseTree(JSONArray categoriesTree)
+    protected List<WalMartTaxonomyTreeCategory> traverseTree(JSONArray categoriesTree)
     {
         List<WalMartTaxonomyTreeCategory> categories = new ArrayList<>();
         for (Object categoryObject : categoriesTree)
@@ -180,7 +445,7 @@ public class WalMartDataPipeline
         return categories;
     }
 
-    private static String getTaxonomyApiUrlString()
+    private String getTaxonomyApiUrlString()
     {
         return Constants.WALMART_TAXONOMY_API_BASE + PropertiesLoader.getInstance().getProperty("walmart.apikey");
     }

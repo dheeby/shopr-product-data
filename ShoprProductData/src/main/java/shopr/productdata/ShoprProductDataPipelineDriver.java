@@ -1,9 +1,8 @@
 package shopr.productdata;
 
 import org.apache.log4j.Logger;
-import shopr.productdata.pipeline.BestBuyDataPipeline;
+import shopr.productdata.objects.PipelineName;
 import shopr.productdata.pipeline.ShoprProductDataPipeline;
-import shopr.productdata.pipeline.WalMartDataPipeline;
 import shopr.productdata.utils.MySQLHandler;
 import shopr.productdata.utils.Utils;
 
@@ -18,7 +17,7 @@ public class ShoprProductDataPipelineDriver
 {
     private static final Logger LOGGER = Logger.getLogger(ShoprProductDataPipelineDriver.class);
 
-    public static void main(String[] args) throws Exception
+    public static void main(String[] args)
     {
         if (args.length != 3)
         {
@@ -30,8 +29,8 @@ public class ShoprProductDataPipelineDriver
         int numRetries = 0;
         int maxRetries = Integer.parseInt(args[2]);
         ArrayList<String[]> states = new ArrayList<>();
-        states.add(new String[]{BestBuyDataPipeline.PIPELINE_NAME, args[0], Utils.createFormattedDateString()});
-        states.add(new String[]{WalMartDataPipeline.PIPELINE_NAME, args[1], Utils.createFormattedDateString()});
+        states.add(new String[]{PipelineName.BESTBUY.name(), args[0], Utils.createFormattedDateString()});
+        states.add(new String[]{PipelineName.WALMART.name(), args[1], Utils.createFormattedDateString()});
 
         try
         {
