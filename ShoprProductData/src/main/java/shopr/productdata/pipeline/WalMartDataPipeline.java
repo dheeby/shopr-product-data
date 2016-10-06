@@ -44,8 +44,6 @@ public class WalMartDataPipeline extends DataPipeline
             "3944_542371_1073085",  // Unlocked Phones
             "3944_3951_132960",     // All laptop computers
             "3944_3951_132982",     // Desktop computers
-            "3944_3951_1089430",    // laptops
-            "3944_1060825_1180168", // 4k Ultra HD tv
             "3944_1060825_447913",  // All TVs
             "3944_1229723_5635313", // Fitbit
             "3944_133277_1096663",  // DSLR cameras
@@ -68,7 +66,7 @@ public class WalMartDataPipeline extends DataPipeline
         HttpClient httpClient = HttpClientBuilder.create().build();
         String apiSuffix = String.format("/v1/paginated/items?apiKey=%s&format=json&category=",
                 PropertiesLoader.getInstance().getProperty("walmart.apikey"));
-        int numPages = 100;
+        int numPages = 200;
 
         for (String category : categories)
         {
