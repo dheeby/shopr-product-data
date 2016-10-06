@@ -68,7 +68,7 @@ public class WalMartDataPipeline extends DataPipeline
         HttpClient httpClient = HttpClientBuilder.create().build();
         String apiSuffix = String.format("/v1/paginated/items?apiKey=%s&format=json&category=",
                 PropertiesLoader.getInstance().getProperty("walmart.apikey"));
-        int numPages = 2;
+        int numPages = 100;
 
         for (String category : categories)
         {
@@ -97,8 +97,16 @@ public class WalMartDataPipeline extends DataPipeline
 
                 if (statusLine.getStatusCode() != 200)
                 {
-                    LOGGER.error("WalMart Paginated Products API request did not succeed: " + statusLine);
-                    return false;
+                    if (statusLine.getStatusCode() == 504)
+                    {
+                        LOGGER.warn("Request timed out: " + statusLine);
+                        continue;
+                    }
+                    else
+                    {
+                        LOGGER.error("WalMart Paginated Products API request did not succeed: " + statusLine);
+                        return false;
+                    }
                 }
 
                 String dataFilename = category + "_page_" + (pageNumber++) + ".json";
@@ -154,7 +162,7 @@ public class WalMartDataPipeline extends DataPipeline
 
         try
         {
-            LocalFileSystemHandler.zipFiles(zipFilePath, destinationDir);
+            LocalFileSystemHandler.zipFiles(zipFilePath, uncleanedDir);
         }
         catch (IOException e)
         {
@@ -182,7 +190,7 @@ public class WalMartDataPipeline extends DataPipeline
 
         CsvMapper csvMapper = new CsvMapper();
         CsvSchema schema = csvMapper.schemaFor(ShoprProduct.class);
-        schema = schema.withColumnSeparator(',');
+        schema = schema.withColumnSeparator('\0');
 
         JSONParser jsonParser = new JSONParser();
 
@@ -273,7 +281,7 @@ public class WalMartDataPipeline extends DataPipeline
                 return false;
             }
 
-            String outFilePath = cleanedDir + File.separator + "cleaned_" + dataFile.getName().replace(".json", ".csv");
+            String outFilePath = cleanedDir + File.separator + "cleaned_" + dataFile.getName().replace(".json", ".nsv");
             File outFile = new File(outFilePath);
             ObjectWriter objectWriter = csvMapper.writer(schema);
             try (

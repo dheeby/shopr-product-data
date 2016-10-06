@@ -130,13 +130,13 @@ public class BestBuyDataPipeline extends DataPipeline
         LOGGER.info("Phase 2: Unzipping BestBuy bulk data file: " + compressedFilePath);
         long startTime = System.currentTimeMillis();
 
-        File outputDir = new File(destinationDir + File.separator + "unzipped");
+        File outputDir = new File(destinationDir + File.separator + "uncleaned");
         if (!outputDir.exists())
         {
-            LOGGER.info("Creating unzipped output directory: " + destinationDir);
+            LOGGER.info("Creating uncleaned output directory: " + destinationDir);
             if (!outputDir.mkdir())
             {
-                LOGGER.error("Failed to create unzipped output directory");
+                LOGGER.error("Failed to create uncleaned output directory");
                 return false;
             }
         }
@@ -198,7 +198,7 @@ public class BestBuyDataPipeline extends DataPipeline
 
         CsvMapper csvMapper = new CsvMapper();
         CsvSchema schema = csvMapper.schemaFor(ShoprProduct.class);
-        schema = schema.withColumnSeparator(',');
+        schema = schema.withColumnSeparator('\0');
 
         JSONParser jsonParser = new JSONParser();
 
@@ -287,7 +287,7 @@ public class BestBuyDataPipeline extends DataPipeline
                 return false;
             }
 
-            String outFilePath = createCleanedDataFilePath(dataFile.getName().replace(".json", ".csv"));
+            String outFilePath = createCleanedDataFilePath(dataFile.getName().replace(".json", ".nsv"));
             File outFile = new File(outFilePath);
             ObjectWriter objectWriter = csvMapper.writer(schema);
             try (

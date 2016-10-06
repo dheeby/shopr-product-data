@@ -92,7 +92,7 @@ public class MySQLHandler
     {
         Statement stmt;
         String sql = String.format(
-                "LOAD DATA LOCAL INFILE '%s' INTO TABLE products FIELDS TERMINATED BY \',\' LINES TERMINATED BY \'\\n\'",
+                "LOAD DATA LOCAL INFILE '%s' INTO TABLE products FIELDS TERMINATED BY \'\\0\' LINES TERMINATED BY \'\\n\'",
                 filename
         );
         boolean status = true;
