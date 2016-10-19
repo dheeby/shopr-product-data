@@ -24,6 +24,7 @@ import java.sql.Date;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -238,6 +239,10 @@ public class BestBuyDataPipeline extends DataPipeline
                     ShoprProduct shoprProduct = new ShoprProduct();
                     shoprProduct.setDs(ds);
                     shoprProduct.setUpc((String) product.get("upc"));
+                    if (shoprProduct.getUpc() == null)
+                    {
+                        continue;
+                    }
                     shoprProduct.setProductId((Long) product.get("productId"));
                     String name = (String) product.get("name");
                     if (name != null)
@@ -254,8 +259,16 @@ public class BestBuyDataPipeline extends DataPipeline
                     shoprProduct.setRegularPrice((Double) product.get("regularPrice"));
                     shoprProduct.setSalePrice((Double) product.get("salePrice"));
                     shoprProduct.setOnSale((Boolean) product.get("onSale"));
-                    shoprProduct.setImage((String) product.get("image"));
-                    shoprProduct.setThumbnailImage((String) product.get("thumbnailImage"));
+                    String image = (String) product.get("image");
+                    if (image != null)
+                    {
+                        shoprProduct.setImage(image.replace("\"", ""));
+                    }
+                    String thumbnailImage = (String) product.get("thumbnailImage");
+                    if (thumbnailImage != null)
+                    {
+                        shoprProduct.setThumbnailImage(thumbnailImage.replace("\"", ""));
+                    }
                     String shortDescription = (String) product.get("shortDescription");
                     if (shortDescription != null)
                     {
@@ -271,7 +284,15 @@ public class BestBuyDataPipeline extends DataPipeline
                     shoprProduct.setCustomerReviewCount((Long) product.get("customerReviewCount"));
                     shoprProduct.setCustomerReviewAverage((String) product.get("customerReviewAverage"));
                     shoprProduct.setPipelineName(pipelineName.name());
-                    shoprProduct.setCategoryPath(((JSONArray)product.get("categoryPath")).toJSONString());
+                    JSONArray categoryPathArray = ((JSONArray)product.get("categoryPath"));
+                    List<String> categories = new ArrayList<>();
+                    for (Object obj : categoryPathArray)
+                    {
+                        JSONObject jsonObj = (JSONObject) obj;
+                        categories.add(((String) jsonObj.get("name")).replace("\"", ""));
+                    }
+                    String categoriesPath = categories.stream().collect(Collectors.joining("/"));
+                    shoprProduct.setCategoryPath(categoriesPath);
 
                     productsList.add(shoprProduct);
                 }

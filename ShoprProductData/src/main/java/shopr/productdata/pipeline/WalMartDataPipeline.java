@@ -34,24 +34,17 @@ public class WalMartDataPipeline extends DataPipeline
     private static final String TAXONOMY_TREE_FILENAME = "walmart_taxonomy.json";
 
     private String[] categories = {
-            "3944_1229722_1229728", // iPad
-            "3944_1229722_1229734", // iPhone
-            "3944_1229722_1696849", // Apple Watch
-            "3944_1229722_1230411", // Beats by Dre
+            "4044_90548",           // Appliances
+            "3944_1229722",         // Apple Brand Experience
             "3944_1156273_1156275", // iPad Air
-            "3944_542371_1127173",  // iPhone
-            "3944_542371_1076544",  // Family mobile
-            "3944_542371_1073085",  // Unlocked Phones
-            "3944_3951_132960",     // All laptop computers
-            "3944_3951_132982",     // Desktop computers
+            "3944_542371",          // Cell Phones
+            "3944_3951",            // Computers
             "3944_1060825_447913",  // All TVs
             "3944_1229723_5635313", // Fitbit
-            "3944_133277_1096663",  // DSLR cameras
-            "3944_133277_1095238",  // GoPro and accessories
-            "3944_133277_1230677",  // Mirrorless cameras
+            "3944_133277",          // Cameras and Camcorders
             "3944_3951_1230331",    // Computer monitors
             "3944_1228606",         // Drones
-            "3944_1095191_4480"     // Headphones
+            "3944_1078524",         // iPad and Tablets
     };
 
     public WalMartDataPipeline(PipelineName pipelineName)
@@ -66,7 +59,7 @@ public class WalMartDataPipeline extends DataPipeline
         HttpClient httpClient = HttpClientBuilder.create().build();
         String apiSuffix = String.format("/v1/paginated/items?apiKey=%s&format=json&category=",
                 PropertiesLoader.getInstance().getProperty("walmart.apikey"));
-        int numPages = 200;
+        int numPages = 450;
 
         for (String category : categories)
         {
@@ -246,8 +239,16 @@ public class WalMartDataPipeline extends DataPipeline
                     shoprProduct.setRegularPrice((Double) product.get("msrp"));
                     shoprProduct.setSalePrice((Double) product.get("salePrice"));
                     shoprProduct.setOnSale(true);
-                    shoprProduct.setImage((String) product.get("largeImage"));
-                    shoprProduct.setThumbnailImage((String) product.get("thumbnailImage"));
+                    String image = (String) product.get("image");
+                    if (image != null)
+                    {
+                        shoprProduct.setImage(image.replace("\"", ""));
+                    }
+                    String thumbnailImage = (String) product.get("thumbnailImage");
+                    if (thumbnailImage != null)
+                    {
+                        shoprProduct.setThumbnailImage(thumbnailImage.replace("\"", ""));
+                    }
                     String shortDescription = (String) product.get("shortDescription");
                     if (shortDescription != null)
                     {
@@ -323,6 +324,7 @@ public class WalMartDataPipeline extends DataPipeline
             LOGGER.error("Error occurred writing or reading file", e);
         }
 
+        LOGGER.info("Uploading cleaned data to S3: " + zipFilePath);
         if (!S3Handler.uploadToS3(Constants.SHOPR_S3_DATA_BUCKET, "product-data/walmart/parsed-data/" +
                 Utils.createFormattedDateString() + "/" + zipFileName, new File(zipFilePath)))
         {
