@@ -60,6 +60,14 @@ public abstract class DataPipeline
                 {
                     LocalFileSystemHandler.createDirectory(cleanedDir);
                 }
+                if (Files.notExists(Paths.get(cleanedDir, "product_price")))
+                {
+                    LocalFileSystemHandler.createDirectory(cleanedDir + File.separator + "product_price");
+                }
+                if (Files.notExists(Paths.get(cleanedDir, "product_info")))
+                {
+                    LocalFileSystemHandler.createDirectory(cleanedDir + File.separator + "product_info");
+                }
             case DATARETRIEVAL:
                 if (!executeDataRetrievalPhase(baseDir))
                 {

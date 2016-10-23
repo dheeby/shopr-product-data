@@ -13,8 +13,9 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
-import shopr.productdata.objects.ShoprProduct;
 import shopr.productdata.objects.PipelineName;
+import shopr.productdata.objects.ShoprProductInfo;
+import shopr.productdata.objects.ShoprProductPrice;
 import shopr.productdata.utils.*;
 
 import java.io.*;
@@ -198,8 +199,6 @@ public class BestBuyDataPipeline extends DataPipeline
         LOGGER.info("Phase 3: Starting data clean phase for data directory: " + dataDirectory);
 
         CsvMapper csvMapper = new CsvMapper();
-        CsvSchema schema = csvMapper.schemaFor(ShoprProduct.class);
-        schema = schema.withColumnSeparator('\0');
 
         JSONParser jsonParser = new JSONParser();
 
@@ -224,7 +223,8 @@ public class BestBuyDataPipeline extends DataPipeline
 
         for (File dataFile : dataFiles)
         {
-            List<ShoprProduct> productsList = new ArrayList<>();
+            List<ShoprProductPrice> productPriceList = new ArrayList<>();
+            List<ShoprProductInfo> productInfoList = new ArrayList<>();
             String dataFilePath = dataFile.getAbsolutePath();
             LOGGER.info("Parsing data file: " + dataFilePath);
             try
@@ -236,54 +236,58 @@ public class BestBuyDataPipeline extends DataPipeline
                 {
                     JSONObject product = (JSONObject) productObject;
 
-                    ShoprProduct shoprProduct = new ShoprProduct();
-                    shoprProduct.setDs(ds);
-                    shoprProduct.setUpc((String) product.get("upc"));
-                    if (shoprProduct.getUpc() == null)
+                    String upc= (String) product.get("upc");
+                    if (upc == null)
                     {
                         continue;
                     }
-                    shoprProduct.setProductId((Long) product.get("productId"));
+
+                    /* Data for table product_price */
+                    ShoprProductPrice shoprProductPrice = new ShoprProductPrice();
+                    shoprProductPrice.setDs(ds);
+                    shoprProductPrice.setUpc(upc);
+                    shoprProductPrice.setRegularPrice((Double) product.get("regularPrice"));
+                    shoprProductPrice.setSalePrice((Double) product.get("salePrice"));
+                    shoprProductPrice.setVendor(pipelineName.name());
+
+                    /* Data for table product_info */
+                    ShoprProductInfo shoprProductInfo = new ShoprProductInfo();
+                    shoprProductInfo.setUpc(upc);
                     String name = (String) product.get("name");
                     if (name != null)
                     {
-                        name = name.replaceAll("\\r?\\n", " ");
+                        shoprProductInfo.setName(name.replaceAll("\\r?\\n", " "));
                     }
-                    shoprProduct.setName(name);
-                    String type = (String) product.get("type");
-                    if (type != null)
-                    {
-                        type = type.replaceAll("\\r?\\n", " ");
-                    }
-                    shoprProduct.setType(type);
-                    shoprProduct.setRegularPrice((Double) product.get("regularPrice"));
-                    shoprProduct.setSalePrice((Double) product.get("salePrice"));
-                    shoprProduct.setOnSale((Boolean) product.get("onSale"));
                     String image = (String) product.get("image");
                     if (image != null)
                     {
-                        shoprProduct.setImage(image.replace("\"", ""));
+                        shoprProductInfo.setImage(image.replace("\"", ""));
                     }
                     String thumbnailImage = (String) product.get("thumbnailImage");
                     if (thumbnailImage != null)
                     {
-                        shoprProduct.setThumbnailImage(thumbnailImage.replace("\"", ""));
+                        shoprProductInfo.setThumbnail(thumbnailImage.replace("\"", ""));
                     }
                     String shortDescription = (String) product.get("shortDescription");
                     if (shortDescription != null)
                     {
                         shortDescription = shortDescription.replaceAll("\\r?\\n", " ");
                     }
-                    shoprProduct.setShortDescription(shortDescription);
+                    shoprProductInfo.setShortDescription(shortDescription);
                     String longDescription = (String) product.get("longDescription");
                     if (longDescription != null)
                     {
                         longDescription = longDescription.replaceAll("\\r?\\n", " ");
                     }
-                    shoprProduct.setLongDescription(longDescription);
-                    shoprProduct.setCustomerReviewCount((Long) product.get("customerReviewCount"));
-                    shoprProduct.setCustomerReviewAverage((String) product.get("customerReviewAverage"));
-                    shoprProduct.setPipelineName(pipelineName.name());
+                    shoprProductInfo.setLongDescription(longDescription);
+                    Long customerReviewCount = (Long) product.get("customerReviewCount");
+                    if (customerReviewCount == null)
+                    {
+                        customerReviewCount = Long.valueOf(0);
+                    }
+                    shoprProductInfo.setCustomerReviewCount(customerReviewCount);
+                    shoprProductInfo.setCustomerReviewAverage((String) product.get("customerReviewAverage"));
+                    shoprProductInfo.setVendor(pipelineName.name());
                     JSONArray categoryPathArray = ((JSONArray)product.get("categoryPath"));
                     List<String> categories = new ArrayList<>();
                     for (Object obj : categoryPathArray)
@@ -292,9 +296,10 @@ public class BestBuyDataPipeline extends DataPipeline
                         categories.add(((String) jsonObj.get("name")).replace("\"", ""));
                     }
                     String categoriesPath = categories.stream().collect(Collectors.joining("/"));
-                    shoprProduct.setCategoryPath(categoriesPath);
+                    shoprProductInfo.setCategoryPath(categoriesPath);
 
-                    productsList.add(shoprProduct);
+                    productPriceList.add(shoprProductPrice);
+                    productInfoList.add(shoprProductInfo);
                 }
                 reader.close();
             }
@@ -308,8 +313,11 @@ public class BestBuyDataPipeline extends DataPipeline
                 return false;
             }
 
-            String outFilePath = createCleanedDataFilePath(dataFile.getName().replace(".json", ".nsv"));
-            File outFile = new File(outFilePath);
+            String filename = dataFile.getName().replace(".json", ".nsv");
+            String priceOutFilePath = createCleanedProductPriceDataFilePath(filename);
+            File outFile = new File(priceOutFilePath);
+            CsvSchema schema = csvMapper.schemaFor(ShoprProductPrice.class);
+            schema = schema.withColumnSeparator('\0');
             ObjectWriter objectWriter = csvMapper.writer(schema);
             try (
                     FileOutputStream fos = new FileOutputStream(outFile);
@@ -317,15 +325,37 @@ public class BestBuyDataPipeline extends DataPipeline
                     OutputStreamWriter osw = new OutputStreamWriter(bos, "UTF-8")
             )
             {
-                objectWriter.writeValue(osw, productsList);
+                objectWriter.writeValue(osw, productPriceList);
             }
             catch (FileNotFoundException e)
             {
-                LOGGER.warn("Could not find file: " + outFilePath, e);
+                LOGGER.warn("Could not find file: " + priceOutFilePath, e);
             }
             catch (IOException e)
             {
-                LOGGER.error("Exception while writing products to file: " + outFilePath, e);
+                LOGGER.error("Exception while writing products to file: " + priceOutFilePath, e);
+            }
+
+            String infoOutFilePath = createCleanedProductInfoDataFilePath(filename);
+            outFile = new File(infoOutFilePath);
+            schema = csvMapper.schemaFor(ShoprProductInfo.class);
+            schema = schema.withColumnSeparator('\0');
+            objectWriter = csvMapper.writer(schema);
+            try (
+                    FileOutputStream fos = new FileOutputStream(outFile);
+                    BufferedOutputStream bos = new BufferedOutputStream(fos, 8192);
+                    OutputStreamWriter osw = new OutputStreamWriter(bos, "UTF-8")
+            )
+            {
+                objectWriter.writeValue(osw, productInfoList);
+            }
+            catch (FileNotFoundException e)
+            {
+                LOGGER.warn("Could not find file: " + infoOutFilePath, e);
+            }
+            catch (IOException e)
+            {
+                LOGGER.error("Exception while writing products to file: " + infoOutFilePath, e);
             }
         }
 
@@ -336,13 +366,29 @@ public class BestBuyDataPipeline extends DataPipeline
     {
         LOGGER.info("Phase 4: Uploading product data to S3");
 
-        String zipFileName = Utils.createFormattedDateString() + "_parsed-data.zip";
-        String zipFilePath = baseDir + File.separator + zipFileName;
+        String zipPriceFileName = Utils.createFormattedDateString() + "_price-parsed-data.zip";
+        String zipPriceFilePath = baseDir + File.separator + zipPriceFileName;
 
+        String zipInfoFileName = Utils.createFormattedDateString() + "_info-parsed-data.zip";
+        String zipInfoFilePath = baseDir + File.separator + zipInfoFileName;
+
+        return s3Upload(zipPriceFileName, zipPriceFilePath, productDataDirectory + File.separator + "product_price")
+                && s3Upload(zipInfoFileName, zipInfoFilePath, productDataDirectory + File.separator + "product_info");
+    }
+
+    protected boolean executeDbInsertionPhase(String productDataDirectory)
+    {
+        LOGGER.info("Phase 5: Inserting product data into database");
+
+        return dbInsert(productDataDirectory + File.separator + "product_price", "product_prices")
+                && dbInsert(productDataDirectory + File.separator + "product_info", "product_info");
+    }
+
+    private boolean s3Upload(String zipFileName, String zipFilePath, String productDataDirectory)
+    {
         try
         {
-            boolean zipFiles = LocalFileSystemHandler.zipFiles(zipFilePath, productDataDirectory);
-            if (!zipFiles)
+            if (!LocalFileSystemHandler.zipFiles(zipFilePath, productDataDirectory))
             {
                 LOGGER.error("Compressing data files to zip directory failed.");
                 return false;
@@ -351,6 +397,7 @@ public class BestBuyDataPipeline extends DataPipeline
         catch (IOException e)
         {
             LOGGER.error("Error occurred writing or reading file", e);
+            return false;
         }
 
         if (!S3Handler.uploadToS3(Constants.SHOPR_S3_DATA_BUCKET, "product-data/bestbuy/parsed-data/" +
@@ -359,15 +406,12 @@ public class BestBuyDataPipeline extends DataPipeline
             LOGGER.error("S3 parsed data upload failure");
             return false;
         }
-
         return true;
     }
 
-    protected boolean executeDbInsertionPhase(String productDataDirectory)
+    private boolean dbInsert(String dir, String table)
     {
-        LOGGER.info("Phase 5: Inserting product data into database");
-
-        File[] productDataFiles = (new File(productDataDirectory)).listFiles();
+        File[] productDataFiles = (new File(dir)).listFiles();
         if (productDataFiles == null || productDataFiles.length == 0)
         {
             LOGGER.error("No files available to insert");
@@ -379,7 +423,7 @@ public class BestBuyDataPipeline extends DataPipeline
         {
             String absolutePath = productDataFile.getAbsolutePath();
             LOGGER.info("Inserting product data file: " + absolutePath);
-            mySQLHandler.loadDataLocalInfileCsv(absolutePath.replaceAll("\\\\", "\\\\\\\\"));
+            mySQLHandler.loadDataLocalInfileCsv(absolutePath.replaceAll("\\\\", "\\\\\\\\"), table);
         }
 
         LOGGER.info("All product data files to insert to DB complete.");
@@ -391,9 +435,14 @@ public class BestBuyDataPipeline extends DataPipeline
         return String.format("%s%s%s", uncleanedDir, File.separator, filename);
     }
 
-    private String createCleanedDataFilePath(String filename)
+    private String createCleanedProductPriceDataFilePath(String filename)
     {
-        return String.format("%s%s%s%s", cleanedDir, File.separator, "cleaned_", filename);
+        return String.format("%s%s%s%s%s%s", cleanedDir, File.separator, "product_price", File.separator, "price_", filename);
+    }
+
+    private String createCleanedProductInfoDataFilePath(String filename)
+    {
+        return String.format("%s%s%s%s%s%s", cleanedDir, File.separator, "product_info", File.separator, "info_", filename);
     }
 
     private String createCompressedProductDataFilename()

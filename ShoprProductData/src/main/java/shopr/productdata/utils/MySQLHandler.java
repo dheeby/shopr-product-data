@@ -88,12 +88,12 @@ public class MySQLHandler
         return status;
     }
 
-    public boolean loadDataLocalInfileCsv(String filename)
+    public boolean loadDataLocalInfileCsv(String filename, String table)
     {
         Statement stmt;
         String sql = String.format(
-                "LOAD DATA LOCAL INFILE '%s' INTO TABLE products FIELDS TERMINATED BY \'\\0\' LINES TERMINATED BY \'\\n\'",
-                filename
+                "LOAD DATA LOCAL INFILE '%s' REPLACE INTO TABLE %s FIELDS TERMINATED BY \'\\0\' LINES TERMINATED BY \'\\n\'",
+                filename, table
         );
         boolean status = true;
         try

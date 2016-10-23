@@ -12,6 +12,7 @@ public class Constants {
 
     public static final boolean ENABLE_BESTBUY_UNCLEANED_S3_UPLOAD = false;
     public static final boolean ENABLE_WALMART_UNCLEANED_S3_UPLOAD = false;
+    public static final boolean ENABLE_AMAZON_UNCLEANED_S3_UPLOAD = false;
 
     public static final String SHOPR_S3_DATA_BUCKET = "shopr-data.com";
     public static String SHOPR_PROPERTIES_FILE = "shopr-production.properties";
