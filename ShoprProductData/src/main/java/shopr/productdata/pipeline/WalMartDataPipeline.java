@@ -363,8 +363,8 @@ public class WalMartDataPipeline extends DataPipeline
     {
         LOGGER.info("Phase 5: Starting DB insertion");
 
-        return dbInsert(dataDirectory + File.separator + "product_price", "product_prices")
-                && dbInsert(dataDirectory + File.separator + "product_info", "product_info");
+        return dbInsert(dataDirectory + File.separator + "product_info", "product_info")
+                && dbInsert(dataDirectory + File.separator + "product_price", "product_prices");
     }
 
     private boolean s3Upload(String zipFileName, String zipFilePath, String productDataDirectory)

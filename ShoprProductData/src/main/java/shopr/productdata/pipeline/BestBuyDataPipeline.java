@@ -380,8 +380,8 @@ public class BestBuyDataPipeline extends DataPipeline
     {
         LOGGER.info("Phase 5: Inserting product data into database");
 
-        return dbInsert(productDataDirectory + File.separator + "product_price", "product_prices")
-                && dbInsert(productDataDirectory + File.separator + "product_info", "product_info");
+        return dbInsert(productDataDirectory + File.separator + "product_info", "product_info")
+                && dbInsert(productDataDirectory + File.separator + "product_price", "product_prices");
     }
 
     private boolean s3Upload(String zipFileName, String zipFilePath, String productDataDirectory)
