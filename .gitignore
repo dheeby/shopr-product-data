@@ -2,3 +2,5 @@ ShoprProductData/target/*
 ShoprProductData/.idea/workspace.xml
 ShoprProductData/.idea/codeStyleSettings.xml
 ShoprProductData/.idea/inspectionProfiles/
+ShoprProductData/src/main/resources/shopr-production.properties
+ShoprProductData/src/main/resources/shopr-development.properties
